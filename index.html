@@ -8,6 +8,24 @@
 			margin: 0;
 			padding: 0;
 		}
+
+    #dialog {
+      color: red;
+      font-weight: bold;
+    }
+
+    #table {
+      border-collapse: collapse;
+    }
+
+    #table td {
+      border: 2px solid #CCC;
+      padding: 2px;
+    }
+
+    #table input {
+      border: 0;
+    }
 	</style>
 </head>
 <body>
@@ -23,6 +41,11 @@
     - Add multi-row editing
     - Export functionality
     - Column/row resizing
+    - Swap from array-like table to object table [swapping out numeric naming schema for a mixed schema]
+
+  TODO:
+    - Add/delete row/col buttons [use transactions here]
+    - Header rows/cols
 -->
 <script>
 (function(window, document){
@@ -38,7 +61,7 @@
   }
 
   // Attempt to open our db
-  var derbyDbRequest = indexedDB.open('devDerby', '0.1');
+  var derbyDbRequest = indexedDB.open('devDerby', 'MDN Dev Derby DB');
 
   // If we are denied
   derbyDbRequest.onerror = function () {
@@ -53,161 +76,271 @@
     var derbyDb = e.target.result,
     // Objectify the table
         table = (function(document){
+          var retObj = {},
           // Localize and privitize the table
-          var _table = document.getElementById('table'),
+              _table = document.getElementById('table'),
               _tableParent = _table.parentNode,
 
           // Private vars
               _rowCount = 0,
-              _colCount = 0,
+              _colCount = 0;
 
           // Private helper fns
-              _actOnEachRow = function (fn) {
-                var rows = _table.childNodes || [],
-                    row,
-                    i;
-                for (i = rows.length; i--; ) {
-                  row = rows[i];
-                  fn(i, row);
-                }
-              },
-              _getCell = function (row, col, value) {
-                // Visciously require a row and column number during construction
-                if (row === undefined || col === undefined) {
-                  throw Error('Row/col not specified for cell constructor');
-                }
+          function _actOnEachRow(fn) {
+            var rows = _table.childNodes || [],
+                row,
+                i;
+            for (i = rows.length; i--; ) {
+              row = rows[i];
+              fn(i, row);
+            }
+          }
 
-                var td = document.createElement('td'),
-                    input = document.createElement('input');
+          function _getCell(row, col, val) {
+            // Visciously require a row and column number during construction
+            if (row === undefined || col === undefined) {
+              throw Error('Row/col not specified for cell constructor');
+            }
 
-                // Set up input type and value
-                input.setAttribute('type', 'text');
-                input.value = value || '';
+            var td = document.createElement('td'),
+                input = document.createElement('input'),
+                _lastVal = val || '',
+                checkTimeout;
 
-                // Watch content for changes
-                // TODO: Try out 100ms timer [could be a lot of timers], hybrid approach, and bubbling
-                input.onchange = function () {
-                  retObj.oncellupdate(row, col, input.value);
-                };
+            // Set up input type and value
+            input.setAttribute('type', 'text');
+            input.value = _lastVal;
 
-                // Append the input to the td
-                td.appendChild(input);
+            // Watch content for changes
+            function checkChange() {
+              var val = input.value;
+              if (_lastVal !== val) {
+                _lastVal = val;
+                retObj.oncellupdate(row, col, val);
+              }
+            }
 
-                // Return generated cell
-                return td;
-              },
-              retObj = {
-                'removeFromFlow': function () {
-                  _tableParent.removeChild(_table);
-                  _table.setAttribute('style', 'display: none');
-                },
-                'returnToFlow': function () {
-                  _table.setAttribute('style', '');
-                  _tableParent.appendChild(_table);
-                },
-                'flushTable': function () {
+            function checkChangeLoop() {
+              // Memoize timeout for onblur
+              checkTimeout = setTimeout(function () {
+                // Check if anything has changed
+                checkChange();
+
+                // Loop on self
+                checkChangeLoop();
+              }, 100);
+            }
+
+            input.onfocus = checkChangeLoop;
+
+            input.onblur = function () {
+              // Stop any further checks
+              clearTimeout(checkTimeout);
+
+              // Perform one final check
+              checkChange();
+            };
+
+            // Append the input to the td
+            td.appendChild(input);
+
+            // Return generated cell
+            return td;
+          }
+
+          retObj = {
+            'removeFromFlow': function () {
+              _tableParent.removeChild(_table);
+              _table.setAttribute('style', 'display: none');
+            },
+            'returnToFlow': function () {
+              _table.setAttribute('style', '');
+              _tableParent.appendChild(_table);
+            },
+            'flushTable': function () {
+              _actOnEachRow(function (i, row) {
+                _table.removeChild(row);
+              });
+            },
+            'addRow': function (row) {
+              row = row || [];
+              var tr = document.createElement('tr'),
+                  cellValue,
+                  i = 0,
+                  len = row.length,
+                  colDiff = len - _colCount;
+
+              // If there is a different number of columns in this row than there are in the table
+              if (colDiff !== 0) {
+                // Then, if there are more columns
+                if (colDiff > 0) {
+                  // Add columns to previous rows
                   _actOnEachRow(function (i, row) {
-                    _table.removeChild(row);
-                  });
-                },
-                'addRow': function (row) {
-                  row = row || [];
-                  var tr = document.createElement('tr'),
-                      cellValue,
-                      i = 0,
-                      len = row.length,
-                      colDiff = len - _colCount;
-
-                  // If there is a different number of columns in this row than there are in the table
-                  if (colDiff !== 0) {
-                    // Then, if there are more columns
-                    if (colDiff > 0) {
-                      // Add columns to previous rows
-                      _actOnEachRow(function (i, row) {
-                        var j = 0,
-                            len = colDiff,
-                            td
-                        for ( ; j < len; j++ ) {
-                          row.appendChild( _getCell(i, j) );
-                        }
-                      });
-
-                      // Save new colCount
-                      _colCount = len;
-                    } else {
-                    // Otherwise, add columns to this row
-                      // The only smart time to use new Array
-                      row = row.concat(new Array(colDiff));
-
-                      // Save new row length
-                      len = _colCount;
+                    var j = 0,
+                        len = colDiff,
+                        td;
+                    for ( ; j < len; j++ ) {
+                      row.appendChild( _getCell(i, j) );
                     }
-                  }
+                  });
 
-                  // Add a new row and its respective cells
-                  for ( ; i < len; i++ ) {
-                    cellValue = row[i];
-                    tr.appendChild( _getCell(_rowCount, i, cellValue) );
-                  }
+                  // Save new colCount
+                  _colCount = len;
+                } else {
+                // Otherwise, add columns to this row
+                  // The only smart time to use new Array
+                  row = row.concat(new Array(colDiff));
 
-                  // Append row to table
-                  _table.appendChild(tr);
+                  // Save new row length
+                  len = _colCount;
+                }
+              }
 
-                  // Increment rowCount
-                  _rowCount += 1;
-                },
-                // TODO: addCol
-                'populate': function (rows) {
-                  var row,
-                      i,
-                      len;
+              // Add a new row and its respective cells
+              for ( ; i < len; i++ ) {
+                cellValue = row[i];
+                tr.appendChild( _getCell(_rowCount, i, cellValue) );
+              }
 
-                  // Hide the table and remove it from the DOM (reduce repaints/reflows)
-                  this.removeFromFlow();
+              // Append row to table
+              _table.appendChild(tr);
 
-                  // Clean out the table
-                  this.flushTable();
+              // Increment rowCount
+              _rowCount += 1;
+            },
+            // TODO: addCol
+            'populate': function (rows) {
+              var row,
+                  i,
+                  len;
 
-                  // Fallback rows
-                  rows = rows || [];
-                  for (i = 0, len = rows.length; i < len; i++ ) {
-                    row = rows[i];
-                    this.addRow(row);
-                  }
+              // Hide the table and remove it from the DOM (reduce repaints/reflows)
+              this.removeFromFlow();
 
-                  // Unhide the table
-                  this.returnToFlow();
-                },
-                'oncellupdate': function(){}
-              };
+              // Clean out the table
+              this.flushTable();
+
+              // Fallback rows
+              rows = rows || [];
+              for (i = 0, len = rows.length; i < len; i++ ) {
+                row = rows[i];
+                this.addRow(row);
+              }
+
+              // Unhide the table
+              this.returnToFlow();
+            },
+            'oncellupdate': function(){}
+          };
+
           return retObj;
         }(document));
 
     // Set up error handling
-    derbyDb.onerror = function (f) {
+    function onerror(f) {
       dialog.innerHTML = 'An error has occurred that I have not accounted for. Please panic or refresh the page';
       console && console.error && console.error(f);
       return;
-    };
+    }
+    derbyDb.onerror = onerror;
 
     // And disco.
 
-    // TODO: Remove population test
-    table.populate([
-      ['wasd', '123'],
-      ['oh, hey', 'lolol']
-    ]);
-    table.oncellupdate = function (i, j, value) {
-      console.log(arguments);
-    };
+    // Set up continue fn
+    function continueFn() {
+      var objectStoreNames = derbyDb.objectStoreNames,
+          objectStoreName,
+          rows = [],
+          transaction,
+          objectStore,
+          cursor;
+
+      if (objectStoreNames.length < 1) {
+        onerror('No object stores exist when one should');
+      }
+
+      // Choose the first alphabetical table from objectStoreNames
+      objectStoreName = objectStoreNames[0];
+
+      // Then begin to collect rows
+      transaction = derbyDb.transaction(objectStoreName);
+      objectStore = transaction.objectStore(objectStoreName);
+      cursorRequest = objectStore.openCursor();
+
+      // Handle errors and successes
+      cursorRequest.onerror = onerror;
+      cursorRequest.onsuccess = function () {
+        var cursor = cursorRequest.result,
+            getRequest;
+
+        // If the cursor is pointing to something
+        if (cursor !== undefined) {
+          // Retrieve it
+          getRequest = objectStore.get(cursor.key);
+          getRequest.onerror = onerror;
+          getRequest.onsuccess = function () {
+            // And add it to a new row
+            // TODO: Actually use keys (cursor.key) for rows
+            rows.push( getRequest.result );
+
+            // Continue to next row
+            cursor.continue();
+          };
+        } else {
+        // Otherwise, populate the table
+          table.populate(rows);
+        }
+      }
+    }
+
+    // Helper function for creating sheets
+    function createSheet(name, callback) {
+      var req = derbyDb.setVersion('0.1');
+      req.onerror = onerror;
+      req.onsuccess = function () {
+        var newStore = derbyDb.createObjectStore(name),
+            rows = [
+              ['Hello', 'and', 'welcome', 'to', ''],
+              ['my', 'IndexedDB', 'Dev', 'Derby', 'Entry']
+            ],
+            i = 0,
+            len = rows.length;
+
+        function addNextRow() {
+          // If we have added all the rows, call our callback
+          if (i >= len) {
+            if (callback) {
+              callback();
+            }
+            return;
+          }
+
+          // Add row to store
+          var putRequest = newStore.put(rows[i], i);
+          putRequest.onerror = onerror;
+          putRequest.onsuccess = function () {
+            // Increment and continue looping
+            i += 1;
+            addNextRow();
+          };
+        }
+        
+        // Begin adding rows
+        addNextRow();
+      }
+
+      // TODO: Update table select box
+      // TODO: Implement table select box
+    }
 
     // If no tables are found
+    if (derbyDb.objectStoreNames.length === 0) {
       // Populate our example table
-
-    // Choose the first alphabetical table from objectStoreNames
-    // And populate the viewer with that
-
-    // TODO: Figure out hooks with auto-saving [100ms async loop]
+      createSheet('Example Table', continueFn);
+    } else {
+    // Otherwise, invoke continueFn
+      continueFn();
+    }
   };
 }(this, document));
 </script>
