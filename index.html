@@ -9,7 +9,19 @@
 			padding: 0;
 		}
 
-    #dialog {
+    body {
+      background: linen;
+    }
+
+    body > div {
+      margin-bottom: 1em;
+    }
+
+    .labelField {
+      display: inline;
+    }
+
+    .error {
       color: red;
       font-weight: bold;
     }
@@ -26,13 +38,40 @@
     #table input {
       border: 0;
     }
+
+    #console {
+      background: #CCC;
+      height: 20em;
+      overflow: auto;
+    }
 	</style>
 </head>
 <body>
 <h1>IndexedDB Demonstration</h1>
-<span id="dialog"></span>
+<div>
+  <p>
+    In this demonstration, a sample database has been set up, via the IndexedDB API, as well as an example table. There is an interface to create more tables on the fly and edit the table fields at will.
+    <br/>
+    The purpose of this demonstration is to show that IndexedDB can be tapered down to represent any 'tame' store as a table.
+    <!-- TODO: Hide everything else until db connects -->
+  </p>
+</div>
+<div>
+  <div class="labelField">
+    <label for="database">Database: </label><input id="database" name="database" type="text" disabled="disabled" /><!-- <button id="databaseChange">Change</button> -->
+  </div>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <div class="labelField">
+    <label for="tableSelect">Table: </label><select id="tableSelect" name="tableSelect"></select><!-- TODO: Implement me -->
+  </div>
+</div>
 <div id="tableContainer">
   <table id="table"></table>
+</div>
+<div>
+  <h2>Console:</h2>
+  <div id="console">
+  </div>
 </div>
 <!--
   Neat but not sure if I will do:
@@ -51,22 +90,34 @@
 (function(window, document){
   // Fallback and globalize indexedDB
   var indexedDB = window.indexedDB = window.indexedDB || window.mozIndexedDB || window.webkitIndexedDB,
-      dialog = document.getElementById('dialog');
+      _consoleDiv = document.getElementById('console'),
+      _console = {
+        'error': function (msg) {
+          this.log('<span class="error">' + msg + '</span>');
+        },
+        'log': function (msg) {
+          _consoleDiv.innerHTML = '<div>[' + (new Date().toLocaleString()) + '] ' + msg + '</div>' + _consoleDiv.innerHTML;
+        }
+      };
 
   // If indexedDB cannot be found
   if (indexedDB === undefined) {
     // Let the user know a different browser should be used
-    dialog.innerHTML = 'Your browser does not support IndexedDB';
+    _console.error('Your browser does not support IndexedDB');
     return;
   }
 
   // Attempt to open our db
-  var derbyDbRequest = indexedDB.open('devDerby', 'MDN Dev Derby DB');
+  var databaseField = document.getElementById('database'),
+      databaseName = 'devDerby',
+      derbyDbRequest = indexedDB.open(databaseName, 'MDN Dev Derby DB');
+
+  databaseField.value = databaseName;
 
   // If we are denied
   derbyDbRequest.onerror = function () {
     // Let the user know we need access to continue
-    dialog.innerHTML = 'You must allow access to your IndexedDB for this webpage';
+    _console.error('You must allow access to your IndexedDB for this webpage');
     return;
   };
 
@@ -238,7 +289,7 @@
 
     // Set up error handling
     function onerror(f) {
-      dialog.innerHTML = 'An error has occurred that I have not accounted for. Please panic or refresh the page';
+      _console.error('An error has occurred that I have not accounted for. Please panic or refresh the page');
       console && console.error && console.error(f);
       return;
     }
@@ -300,8 +351,8 @@
       req.onsuccess = function () {
         var newStore = derbyDb.createObjectStore(name),
             rows = [
-              ['Hello', 'and', 'welcome', 'to', ''],
-              ['my', 'IndexedDB', 'Dev', 'Derby', 'Entry']
+              ['Hello', 'and', 'welcome', 'to'],
+              ['my', 'IndexedDB', 'Dev Derby', 'Entry']
             ],
             i = 0,
             len = rows.length;
@@ -324,7 +375,7 @@
             addNextRow();
           };
         }
-        
+
         // Begin adding rows
         addNextRow();
       }
