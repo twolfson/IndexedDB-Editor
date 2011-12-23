@@ -340,6 +340,25 @@
         } else {
         // Otherwise, populate the table
           table.populate(rows);
+          
+          // And update to the proper oncellupdate
+          table.oncellupdate = function (rowIndex, colIndex, value) {
+            // Update our local copy of row
+            var row = rows[rowIndex],
+                transaction,
+                objectStore,
+                request;
+            row[colIndex] = value;
+            
+            // Try to save to db
+            transaction = derbyDb.transaction(objectStoreName, IDBTransaction.READ_WRITE);
+            objectStore = transaction.objectStore(objectStoreName);
+            request = objectStore.put(row, rowIndex);
+            request.onerror = onerror;
+            request.onsuccess = function () {
+              _console.log('Row ' + rowIndex + ', Column ' + colIndex + ' successfully updated.');
+            };
+          };
         }
       }
     }
