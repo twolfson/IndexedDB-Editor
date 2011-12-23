@@ -1,0 +1,64 @@
+<!doctype>
+<html>
+<head>
+	<title>MDN Derby - December 2011</title>
+	<style>
+    /* Visual fixes (poor man's reset/normalize.css) */
+		* {
+			margin: 0;
+			padding: 0;
+		}
+	</style>
+</head>
+<body>
+<h1>IndexedDB Demonstration</h1>
+<span id="dialog"></span>
+<script>
+(function(window, document){
+  // Fallback and globalize indexedDB
+  var indexedDB = window.indexedDB = window.indexedDB || window.mozIndexedDB || window.webkitIndexedDB,
+      dialog = document.getElementById('dialog');
+
+  // If indexedDB cannot be found
+  if (indexedDB === undefined) {
+    // Let the user know a different browser should be used
+    dialog.innerHTML = 'Your browser does not support IndexedDB';
+    return;
+  }
+
+  // Attempt to open our db
+  var derbyDbRequest = indexedDB.open('devDerby', '0.1');
+
+  // If we are denied
+  derbyDbRequest.onerror = function () {
+    // Let the user know we need access to continue
+    dialog.innerHTML = 'You must allow access to your IndexedDB for this webpage';
+    return;
+  };
+
+  // If we are allowed in
+  derbyDbRequest.onsuccess = function (e) {
+    // Grab the db
+    var derbyDb = e.target.result;
+
+    // Set up error handling
+    derbyDb.onerror = function (f) {
+      dialog.innerHTML = 'An error has occurred that I have not accounted for. Please panic or refresh the page';
+      console && console.error && console.error(f);
+      return;
+    };
+    
+    // And disco.
+    
+    // If no tables are found
+      // Populate our example table
+      
+    // Choose the first alphabetical table from objectStoreNames
+    // And populate the viewer with that
+    
+    // TODO: Figure out hooks with auto-saving [100ms async loop]
+  };
+}(this, document));
+</script>
+</body>
+</html>
