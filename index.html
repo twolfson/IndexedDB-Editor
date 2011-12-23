@@ -13,6 +13,17 @@
 <body>
 <h1>IndexedDB Demonstration</h1>
 <span id="dialog"></span>
+<div id="tableContainer">
+  <table id="table"></table>
+</div>
+<!--
+  Neat but not sure if I will do:
+    - Add ability for formula row
+      -> Add this.row, this.col, this.get(row, col), this.getRel(relRow, relCol)
+    - Add multi-row editing
+    - Export functionality
+    - Column/row resizing
+-->
 <script>
 (function(window, document){
   // Fallback and globalize indexedDB
@@ -39,7 +50,138 @@
   // If we are allowed in
   derbyDbRequest.onsuccess = function (e) {
     // Grab the db
-    var derbyDb = e.target.result;
+    var derbyDb = e.target.result,
+    // Objectify the table
+        table = (function(document){
+          // Localize and privitize the table
+          var _table = document.getElementById('table'),
+              _tableParent = _table.parentNode,
+
+          // Private vars
+              _rowCount = 0,
+              _colCount = 0,
+
+          // Private helper fns
+              _actOnEachRow = function (fn) {
+                var rows = _table.childNodes || [],
+                    row,
+                    i;
+                for (i = rows.length; i--; ) {
+                  row = rows[i];
+                  fn(i, row);
+                }
+              },
+              _getCell = function (row, col, value) {
+                // Visciously require a row and column number during construction
+                if (row === undefined || col === undefined) {
+                  throw Error('Row/col not specified for cell constructor');
+                }
+
+                var td = document.createElement('td'),
+                    input = document.createElement('input');
+
+                // Set up input type and value
+                input.setAttribute('type', 'text');
+                input.value = value || '';
+
+                // Watch content for changes
+                // TODO: Try out 100ms timer [could be a lot of timers], hybrid approach, and bubbling
+                input.onchange = function () {
+                  retObj.oncellupdate(row, col, input.value);
+                };
+
+                // Append the input to the td
+                td.appendChild(input);
+
+                // Return generated cell
+                return td;
+              },
+              retObj = {
+                'removeFromFlow': function () {
+                  _tableParent.removeChild(_table);
+                  _table.setAttribute('style', 'display: none');
+                },
+                'returnToFlow': function () {
+                  _table.setAttribute('style', '');
+                  _tableParent.appendChild(_table);
+                },
+                'flushTable': function () {
+                  _actOnEachRow(function (i, row) {
+                    _table.removeChild(row);
+                  });
+                },
+                'addRow': function (row) {
+                  row = row || [];
+                  var tr = document.createElement('tr'),
+                      cellValue,
+                      i = 0,
+                      len = row.length,
+                      colDiff = len - _colCount;
+
+                  // If there is a different number of columns in this row than there are in the table
+                  if (colDiff !== 0) {
+                    // Then, if there are more columns
+                    if (colDiff > 0) {
+                      // Add columns to previous rows
+                      _actOnEachRow(function (i, row) {
+                        var j = 0,
+                            len = colDiff,
+                            td
+                        for ( ; j < len; j++ ) {
+                          row.appendChild( _getCell(i, j) );
+                        }
+                      });
+
+                      // Save new colCount
+                      _colCount = len;
+                    } else {
+                    // Otherwise, add columns to this row
+                      // The only smart time to use new Array
+                      row = row.concat(new Array(colDiff));
+
+                      // Save new row length
+                      len = _colCount;
+                    }
+                  }
+
+                  // Add a new row and its respective cells
+                  for ( ; i < len; i++ ) {
+                    cellValue = row[i];
+                    tr.appendChild( _getCell(_rowCount, i, cellValue) );
+                  }
+
+                  // Append row to table
+                  _table.appendChild(tr);
+
+                  // Increment rowCount
+                  _rowCount += 1;
+                },
+                // TODO: addCol
+                'populate': function (rows) {
+                  var row,
+                      i,
+                      len;
+
+                  // Hide the table and remove it from the DOM (reduce repaints/reflows)
+                  this.removeFromFlow();
+
+                  // Clean out the table
+                  this.flushTable();
+
+                  // Fallback rows
+                  rows = rows || [];
+                  for (i = 0, len = rows.length; i < len; i++ ) {
+                    row = rows[i];
+                    this.addRow(row);
+                  }
+
+                  // Unhide the table
+                  this.returnToFlow();
+                },
+                'oncellupdate': function(){}
+              };
+          return retObj;
+        }(document));
 
     // Set up error handling
     derbyDb.onerror = function (f) {
@@ -47,15 +189,24 @@
       console && console.error && console.error(f);
       return;
     };
-    
+
     // And disco.
-    
+
+    // TODO: Remove population test
+    table.populate([
+      ['wasd', '123'],
+      ['oh, hey', 'lolol']
+    ]);
+    table.oncellupdate = function (i, j, value) {
+      console.log(arguments);
+    };
+
     // If no tables are found
       // Populate our example table
-      
+
     // Choose the first alphabetical table from objectStoreNames
     // And populate the viewer with that
-    
+
     // TODO: Figure out hooks with auto-saving [100ms async loop]
   };
 }(this, document));
