@@ -26,8 +26,13 @@
       font-weight: bold;
     }
 
+    #tableContainer {
+      display: inline;
+    }
+
     #table {
       border-collapse: collapse;
+      display: inline;
     }
 
     #table th {
@@ -47,6 +52,10 @@
 
     #table td.disabled input {
       visibility: hidden;
+    }
+
+    #addCol {
+      vertical-align: top;
     }
 
     #console {
@@ -74,12 +83,18 @@
     <label for="tableSelect">Table: </label><select id="tableSelect" name="tableSelect"></select>
   </div>
 </div>
-<div id="tableContainer">
-  <table id="table">
-    <tr id="tableHeader">
-      <th></th>
-    </tr>
-  </table>
+<div>
+  <div id="tableContainer">
+    <table id="table">
+      <tr id="tableHeader">
+        <th></th>
+      </tr>
+    </table>
+  </div>
+  <button id="addCol">Add Column</button>
+</div>
+<div>
+  <button id="addRow">Add Row</button>
 </div>
 <div id="jsonView">
 </div>
@@ -95,10 +110,6 @@
     - Add multi-row editing
     - Column/row resizing
 
-
-    - Double click for enable/disable cell
-    - JSON view
-
   TODO:
     - Add/delete row/col buttons [use transactions here]
     - Update table select box
@@ -109,10 +120,10 @@
     - onrowdelete
     - onrowchange
     - Same methods for columns
-    - oncelldisable
-    - oncellenable
-    - Robust test object edit/save
     - Down coerce JSON to string and try to upconvert JSON to object
+    - JSON view
+    - Load from CSV and JSON
+    - Handle basic string case
 -->
 <script>
 (function(window, document){
@@ -161,6 +172,8 @@
     var derbyDb = e.target.result,
     // Objectify the table
         table = (function(document){
+          function noop () {}
+
           function Indexer() {
             this.arr = [];
             this.map = {};
@@ -171,6 +184,7 @@
             'push': function (key) {
               var map = this.map;
               if (map.hasOwnProperty(key)) {
+                _console.error('Key is already defined: ' + key);
                 throw new Error('Indexer key is already defined: ' + key);
               }
               // Save key to counter value (preserves order even through decrement)
@@ -184,7 +198,7 @@
             },
             'delete': function (key) {
               // Delete from map
-              delete map[key];
+              delete this.map[key];
 
               // Find and remove item from array
               var arr = this.arr,
@@ -206,8 +220,6 @@
               _rows = [],
               _rowIndexer = new Indexer(),
               _colIndexer = new Indexer();
-              /*              _colCount = 0,
-              _colIndexMap = {}; */
 
           // Private helper fns
           function _actOnEachRow(fn) {
@@ -272,6 +284,26 @@
             // Append the input to the td
             td.appendChild(input);
 
+            // On a double click of the td, enable/disable the cell
+            td.ondblclick = function () {
+              var className = td.className;
+
+              // If the element is currently enabled
+              if (className === undefined || className === '') {
+                // Disable it
+                td.className = 'disabled';
+
+                // And announce that it has been disabled
+                retObj.oncelldisable(rowKey, colKey, val);
+              } else {
+              // Otherwise,  enable it
+                td.className = '';
+
+                // And announce that it has been enabled
+                retObj.oncellenable(rowKey, colKey, val);
+              }
+            };
+
             // Return generated cell
             return td;
           }
@@ -295,14 +327,49 @@
               // Flush any memory leaks too
               _rows = [];
             },
-            'addRow': function (rowKey, row) {
-              var tr = document.createElement('tr'),
+            'deleteRow': function (rowKey) {
+              // Grab the current array of rows
+              var rowKeys = _rowIndexer.arr,
+                  index = rowKeys.indexOf(rowKey),
+                  row = _rows[index];
+
+              // Remove the row from the table
+              _table.removeChild(row);
+
+              // Remove the row from the rows array
+              _rows.splice(index, 1);
+
+              // Remove the key from the indexer
+              _rowIndexer['delete'](rowKey);
+
+              // Announce event
+              this.onrowdelete(rowKey);
+            },
+            'deleteCol': function (colKey) {
+
+            },
+            'addRow': function (rowKey, row, silentAdd) {
+              row = row || {};
+              var that = this,
+                  tr = document.createElement('tr'),
                   th = document.createElement('th'),
+                  deleteButton = document.createElement('button'),
+                  renameButton = document.createElement('button'),
                   colKeys = _colIndexer.map,
                   key;
 
+              // Set up bindings for delete and rename buttons
+              deleteButton.innerHTML = 'Delete row';
+              deleteButton.onclick = function () {
+                that.deleteRow(rowKey);
+              };
+
+              // TODO: Renamebutton
+
               // Generate th for the row
               th.innerHTML = rowKey;
+              th.appendChild(deleteButton);
+              th.appendChild(renameButton);
               tr.appendChild(th);
 
               // Iterate the keys and generate any new columns
@@ -333,16 +400,19 @@
                 tr.appendChild(td);
               }
 
-              // TODO: Double click disable/enable cell
-
               // Append row to table
               _table.appendChild(tr);
 
               // Increment rowCount and save to rows
               _rows.push(tr);
               _rowIndexer.push(rowKey);
+
+              // Announce addition
+              if (silentAdd !== true) {
+                this.onrowadd(rowKey);
+              }
             },
-            'addCol': function (colKey) {
+            'addCol': function (colKey, silentAdd) {
               // Add th
               var th = document.createElement('th');
               th.innerHTML = colKey;
@@ -357,6 +427,11 @@
 
               // Index latest key
               _colIndexer.push(colKey);
+
+              // Announce addition
+              if (silentAdd !== true) {
+                this.oncolumnadd(colKey);
+              }
             },
             'populate': function (rows) {
               var key;
@@ -370,14 +445,41 @@
               // Iterate object and add rows
               for (key in rows) {
                 if (rows.hasOwnProperty(key)) {
-                  this.addRow(key, rows[key]);
+                  this.addRow(key, rows[key], true);
                 }
               }
 
               // Unhide the table
               this.returnToFlow();
             },
-            'oncellupdate': function(){}
+            // Cell methods
+            'oncellenable': noop,
+            'oncelldisable': noop,
+            'oncellupdate': noop,
+
+            // Row methods
+            'onrowadd': noop,
+            'onrowdelete': noop,
+            'onrowrename': noop,
+
+            // Column methods
+            'oncolumnadd': noop,
+            'oncolumndelete': noop,
+            'oncolumnrename': noop
+          };
+
+          // Listen to addRow and addColumn and trigger appropriate functions
+          var addRowButton = document.getElementById('addRow'),
+              addColButton = document.getElementById('addCol');
+
+          addRowButton.onclick = function () {
+            var rowName = prompt('What would you like to title the new row?');
+            retObj.addRow(rowName, {});
+          };
+
+          addColButton.onclick = function () {
+            var colName = prompt('What would you like to title the new column?');
+            retObj.addCol(colName);
           };
 
           return retObj;
@@ -418,7 +520,8 @@
       cursorRequest.onerror = onerror;
       cursorRequest.onsuccess = function () {
         var cursor = cursorRequest.result,
-            getRequest;
+            getRequest,
+            updateDb;
 
         // If the cursor is pointing to something
         if (cursor !== undefined) {
@@ -436,23 +539,85 @@
         // Otherwise, populate the table
           table.populate(rows);
 
+          updateDb = function (value, key, successFn) {
+            var transaction = derbyDb.transaction(objectStoreName, IDBTransaction.READ_WRITE),
+                objectStore = transaction.objectStore(objectStoreName),
+                request = objectStore.put(value, key);
+            request.onerror = onerror;
+            request.onsuccess = successFn;
+          };
+
           // And update to the proper oncellupdate
-          table.oncellupdate = function (rowIndex, colIndex, value) {
+          table.oncellupdate = function (rowKey, colKey, value) {
             // Update our local copy of row
-            var row = rows[rowIndex],
-                transaction,
-                objectStore,
-                request;
-            row[colIndex] = value;
+            var row = rows[rowKey];
+            row[colKey] = value;
 
             // Try to save to db
-            transaction = derbyDb.transaction(objectStoreName, IDBTransaction.READ_WRITE);
-            objectStore = transaction.objectStore(objectStoreName);
-            request = objectStore.put(row, rowIndex);
+            updateDb(row, rowKey, function () {
+              _console.log('Row &quot;' + rowKey + '&quot;, Column &quot;' + colKey + '&quot; successfully updated.');
+            });
+          };
+
+          // Update on a cell enable
+          table.oncellenable = function (rowKey, colKey, value) {
+            // Update our local copy of row
+            var row = rows[rowKey];
+            row[colKey] = value || '';
+
+            // Try to save to db
+            updateDb(row, rowKey, function () {
+              _console.log('Row &quot;' + rowKey + '&quot;, Column &quot;' + colKey + '&quot; successfully enabled.');
+            });
+          };
+
+          // Update on a cell disable
+          table.oncelldisable = function (rowKey, colKey, value) {
+            // Update our local copy of row
+            var row = rows[rowKey];
+            delete row[colKey];
+
+            // Try to save to db
+            updateDb(row, rowKey, function () {
+              _console.log('Row &quot;' + rowKey + '&quot;, Column &quot;' + colKey + '&quot; successfully disabled.');
+            });
+          };
+
+          // Update on row creation
+          table.onrowadd = function (rowKey, row) {
+            // Update our local copy of row
+            rows[rowKey] = row;
+
+            // Try to save to db
+            updateDb(row, rowKey, function () {
+              _console.log('Row &quot;' + rowKey + '&quot; successfully added.');
+            });
+          };
+
+          // Update on row deletion
+          table.onrowdelete = function (rowKey) {
+            // Update our local copy of row
+            delete rows[rowKey];
+
+            // Try to save to db
+            var transaction = derbyDb.transaction(objectStoreName, IDBTransaction.READ_WRITE),
+                objectStore = transaction.objectStore(objectStoreName),
+                request = objectStore.delete(rowKey);
             request.onerror = onerror;
             request.onsuccess = function () {
-              _console.log('Row ' + rowIndex + ', Column ' + colIndex + ' successfully updated.');
+              _console.log('Row &quot;' + rowKey + '&quot; successfully deleted.');
             };
+          };
+
+          // Update on column creation
+          table.oncolumnadd = function (colKey) {
+            _console.log('Column &quot;' + colKey + '&quot; successfully added.');
+          };
+
+          // Update on column deletion
+          table.oncolumndelete = function (colKey) {
+            // TODO: Update all rows??
+            _console.log('Column &quot;' + colKey + '&quot; successfully deleted.');
           };
         }
       }
