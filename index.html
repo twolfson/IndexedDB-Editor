@@ -19,12 +19,17 @@
 
     button {
       cursor: pointer;
+      vertical-align: text-bottom;
     }
 
     fieldset {
       display: inline;
       float: right;
       padding: 3px;
+    }
+    
+    h2 {
+      display: inline;
     }
 
     .labelField{
@@ -35,13 +40,13 @@
       color: red;
       font-weight: bold;
     }
+    
+    .hidden {
+      visibility: hidden;
+    }
 
     .displayNone {
       display: none;
-    }
-
-    #tableContainer {
-      display: inline;
     }
 
     #table {
@@ -74,9 +79,36 @@
     #table td.disabled input {
       visibility: hidden;
     }
+    
+    #stringContainer:after {
+      content: ".";
+      clear: both;
+      display: block;
+    }
 
-    #addCol {
-      vertical-align: top;
+    #stringContainer .stringItem:first-child {
+      border-width: 2px 0 0 2px;
+    }
+
+    .stringItem {
+      float: left;
+      background: #FFF;
+      border-width: 2px 0 0 0;
+      border-style: solid;
+      border-color: #CCC;
+    }
+
+    .stringItem > div {
+      border-width: 0 2px 2px 0;
+      border-style: solid;
+      border-color: #CCC;
+      padding: 20px;
+    }
+
+    .headItem {
+      background: #E9E9E9;
+      vertical-align: middle;
+      text-align: center;
     }
 
     #console {
@@ -104,6 +136,10 @@
       padding: 2%;
       background: #FFF;
       z-index: 9002;
+    }
+    
+    #modalBox h2 {
+      display: block;
     }
 
     #closeModalLink {
@@ -157,18 +193,35 @@
   </fieldset>
 </div>
 <div>
+  <h2>Objects/Arrays:</h2>
+  &nbsp;
+  <button id="addRow">Add Row</button>
+  &nbsp;
+  <button id="addCol">Add Column</button>
   <div id="tableContainer">
     <table id="table">
     </table>
   </div>
-  <button id="addCol">Add Column</button>
 </div>
 <div>
-  <button id="addRow">Add Row</button>
+  <h2>Strings:</h2>
+  &nbsp;
+  <button id="addItem">Add Item</button>
+  <div id="stringContainer">
+    <div class="stringItem">
+      <div class="headItem name">
+        <strong>Name</strong>
+        <br/>
+        <button class="hidden">&nbsp;</button>
+      </div>
+      <div class="headItem value">
+        <strong>Value</strong>
+      </div>
+    </div>
+  </div>
 </div>
 <div>
-  <button id="outputJson">Output JSON</button>
-  <h2>Console:</h2>
+  <h2>Console:</h2><button id="outputJson">Output store as JSON</button>
   <div id="console">
   </div>
 </div>
@@ -201,7 +254,9 @@
     - Objectify select box
 
   TODO:
-    - Handle basic string case
+    - Saving on string edit/add/del
+    - Main key manager and first-action for any key edits
+    - Document double clicks, on the fly saving
 -->
 <script>
 (function(window, document){
@@ -269,7 +324,6 @@
       var map = this.map;
       if (map.hasOwnProperty(key)) {
         _console.error('Key is already defined: ' + key);
-        throw new Error('Indexer key is already defined: ' + key);
       }
       // Save key to counter value (preserves order even through decrement)
       map[key] = this.counter;
@@ -281,13 +335,18 @@
       this.counter += 1;
     },
     'delete': function (key) {
+      var map = this.map;
+      // Throw an error if the key does not exist
+      if (!map.hasOwnProperty(key)) {
+        _console.error('Key does not exist: ' + key);
+      }
+
       // Delete from map
-      delete this.map[key];
+      delete map[key];
 
       // Find and remove item from array
-      var arr = this.arr,
-          arrIndex = arr.indexOf(key);
-      arr.splice(arrIndex, 1);
+      var arrIndex = this.indexOf(key);
+      this.arr.splice(arrIndex, 1);
     },
     'count': function () {
       return this.arr.length;
@@ -296,8 +355,51 @@
       this.arr = [];
       this.map = {};
       this.counter = 0;
+    },
+    'indexOf': function (key) {
+      var arr = this.arr,
+          arrIndex = arr.indexOf(key);
+      return arrIndex;
     }
   };
+
+  function Binder(input) {
+    var _lastVal = input.value,
+        retObj = {
+          'onchange': function (callback) {
+            // Watch content for changes
+            function checkChange() {
+              var val = input.value;
+              if (_lastVal !== val) {
+                _lastVal = val;
+                callback(val);
+              }
+            }
+
+            function checkChangeLoop() {
+              // Memoize timeout for onblur
+              checkTimeout = setTimeout(function () {
+                // Check if anything has changed
+                checkChange();
+
+                // Loop on self
+                checkChangeLoop();
+              }, 100);
+            }
+
+            input.onfocus = checkChangeLoop;
+
+            input.onblur = function () {
+              // Stop any further checks
+              clearTimeout(checkTimeout);
+
+              // Perform one final check
+              checkChange();
+            };
+          }
+        };
+    return retObj;
+  }
 
   // Hook up modal bindings
   // Objectify modal
@@ -338,6 +440,105 @@
   _createTableFromData.onclick = function () {
     $modal.show();
   };
+
+  // Objectify string table
+  var $stringContainer = (function(document){
+    var retObj = {},
+    // Localize and privitize container
+        _stringContainer = document.getElementById('stringContainer'),
+
+    // Privitized variables
+        _itemIndexer = new Indexer(),
+        _items = [];
+
+    // Set up bindings for
+    retObj = {
+      'flush': function () {
+        var itemsArr = _itemIndexer.arr,
+            i = itemsArr.length;
+        while (i--) {
+          this.deleteItem(itemsArr[i], true);
+        }
+      },
+      'addItem': function (key, val, silentAdd) {
+        // Check for pre-existing key
+        _itemIndexer.push(key);
+        // TODO: _allKeyIndexer for every .push, .delete, and .clear
+        // _allKeyIndexer.push(key);
+
+        var that = this,
+            container = document.createElement('div'),
+            keyContainer = document.createElement('div'),
+            deleteButton = document.createElement('button'),
+            valueContainer = document.createElement('div'),
+            valueInput = document.createElement('input');
+
+        // Set up classes
+        container.className = 'stringItem';
+        keyContainer.className = 'headItem name';
+        valueContainer.className = 'value';
+
+
+        // Set up key container
+        keyContainer.innerHTML = key + '<br/>';
+        deleteButton.innerHTML = 'Delete Item';
+        deleteButton.onclick = function () {
+          that.deleteItem(key);
+        };
+        keyContainer.appendChild(deleteButton);
+
+        // Set up value container
+        valueInput.value = val || '';
+        valueContainer.appendChild(valueInput);
+
+        // Watch input for changes
+        Binder(valueInput).onchange(function (val) {
+          // And announce when one occurs
+          that.onitemupdate(key, val);
+        });
+
+        // Append to DOM and memoize
+        container.appendChild(keyContainer);
+        container.appendChild(valueContainer);
+        _stringContainer.appendChild(container);
+        _items.push(container);
+
+        // Announce completion of event
+        if (silentAdd !== true) {
+          this.onitemadd(key, val);
+        }
+      },
+      'deleteItem': function (key, silentDelete) {
+        // Get key index
+        var index = _itemIndexer.indexOf(key);
+
+        // Check and remove key exists
+        _itemIndexer.delete(key);
+        // _allKeysIndexer.delete(key);
+
+        // Remove element from the DOM and memory
+        _stringContainer.removeChild( _items[index] );
+        _items.splice(index, 1);
+
+        // Trigger event
+        if (silentDelete !== true) {
+          this.onitemdelete(key);
+        }
+      },
+      'onitemadd': noop,
+      'onitemdelete': noop,
+      'onitemupdate': noop
+    };
+
+    // Attach binding for add itembutton
+    var _addItem = document.getElementById('addItem');
+    _addItem.onclick = function () {
+      var keyName = prompt('What would you like the name the new string?');
+      retObj.addItem(keyName);
+    };
+
+    return retObj;
+  }(document));
 
   // Objectify table
   var $table = (function(document){
@@ -393,42 +594,16 @@
       }
 
       // Watch content for changes
-      function checkChange() {
-        var val = input.value,
-            announceVal = val;
-        if (_lastVal !== val) {
-          _lastVal = val;
+      Binder(input).onchange(function (val) {
+        var announceVal = val;
+        // Try to upcast val as an object
+        try {
+          announceVal = JSON.parse(val);
+        } catch (g) {}
 
-          // Try to upcast val as an object
-          try {
-            announceVal = JSON.parse(val);
-          } catch (g) {}
-
-          // Announce change has occurred
-          retObj.oncellupdate(rowKey, colKey, announceVal);
-        }
-      }
-
-      function checkChangeLoop() {
-        // Memoize timeout for onblur
-        checkTimeout = setTimeout(function () {
-          // Check if anything has changed
-          checkChange();
-
-          // Loop on self
-          checkChangeLoop();
-        }, 100);
-      }
-
-      input.onfocus = checkChangeLoop;
-
-      input.onblur = function () {
-        // Stop any further checks
-        clearTimeout(checkTimeout);
-
-        // Perform one final check
-        checkChange();
-      };
+        // Announce change has occurred
+        retObj.oncellupdate(rowKey, colKey, announceVal);
+      });
 
       // Append the input to the td
       td.appendChild(input);
@@ -491,7 +666,7 @@
         _table.className = '';
         _tableParent.appendChild(_table);
       },
-      'flushTable': function () {
+      'flush': function () {
         // Localize key arrays
         var colKeys = _colIndexer.arr,
             rowKeys = _rowIndexer.arr,
@@ -513,8 +688,7 @@
       },
       'deleteRow': function (rowKey, silentDelete) {
         // Grab the current array of rows
-        var rowKeys = _rowIndexer.arr,
-            index = rowKeys.indexOf(rowKey),
+        var index = _rowIndexer.indexOf(rowKey),
             row = _rows[index];
 
         // Remove the row from the table
@@ -536,8 +710,7 @@
         this.removeFromFlow();
 
         // Grab the current array of rows
-        var colKeys = _colIndexer.arr,
-            index = colKeys.indexOf(colKey),
+        var index = _colIndexer.indexOf(colKey),
             cellIndex = index + 1;
 
         // Remove header row's cell
@@ -649,25 +822,6 @@
         if (silentAdd !== true) {
           this.oncoladd(colKey);
         }
-      },
-      'populate': function (rows) {
-        var key;
-
-        // Hide the table and remove it from the DOM (reduce repaints/reflows)
-        this.removeFromFlow();
-
-        // Clean out the table
-        this.flushTable();
-
-        // Iterate object and add rows
-        for (key in rows) {
-          if (rows.hasOwnProperty(key)) {
-            this.addRow(key, rows[key], true);
-          }
-        }
-
-        // Unhide the table
-        this.returnToFlow();
       },
       // Cell methods
       'oncellenable': noop,
@@ -801,8 +955,34 @@
               cursor.continue();
             };
           } else {
-          // Otherwise, populate the table
-            $table.populate(rows);
+          // Otherwise
+            // Clean out the table and string container
+            $stringContainer.flush();
+            $table.flush();
+            
+            // Iterate the rows
+            var key,
+                row;
+
+            // Hide the table and remove it from the DOM (reduce repaints/reflows)
+            $table.removeFromFlow();
+
+            // Iterate object and add rows
+            for (key in rows) {
+              if (rows.hasOwnProperty(key)) {
+                row = rows[key];
+                // If the row is an object, add it to the table
+                if (typeof row === 'object') {
+                  $table.addRow(key, row, true);
+                } else {
+                // Otherwise, add it to the string container
+                  $stringContainer.addItem(key, row, true);
+                }
+              }
+            }
+
+            // Unhide the table
+            $table.returnToFlow();
 
             updateDb = function (value, key, successFn) {
               var transaction = derbyDb.transaction(objectStoreName, IDBTransaction.READ_WRITE),
@@ -952,6 +1132,9 @@
               // ''     'Hello' 'and'       'welcome'       'to'
               // 'my'   'MDN'   'Dev Derby' 'demonstration' -
               // 'of'   -       -           -               'IndexedDB'
+              
+              // December
+              // 2011
               rowObjs = data || {
                 'my': {
                   'Hello': 'MDN',
@@ -960,7 +1143,8 @@
                 },
                 'of': {
                   'to': 'IndexedDB'
-                }
+                },
+                'December': '2011'
               },
               key,
               rowKeyArr = [],
@@ -1035,8 +1219,6 @@
 
         // Attempt to create the new table
         createStore(newTableName, null, afterCreateStore(newTableName));
-
-        // TODO: Document double clicks, on the fly saving
       };
 
       // Bind to the create table with data
