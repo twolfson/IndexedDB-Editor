@@ -83,11 +83,11 @@
 </div>
 <div>
   <div class="labelField">
-    <label for="database">Database: </label><input id="database" name="database" type="text" value="devDerby" disabled="disabled" /> <button id="changeDatabase">Change</button>
+    <label for="database">Database: </label><input id="database" name="database" type="text" value="devDerby" /> <button id="changeDatabase">Change</button>
   </div>
   &nbsp;&nbsp;&nbsp;&nbsp;
   <div class="labelField">
-    <label for="tableSelect">Table: </label><select id="tableSelect" name="tableSelect" disabled="disabled"></select> <button id="createTable">Create Table</button>
+    <label for="tableSelect">Table: </label><select id="tableSelect" name="tableSelect" ></select> <button id="createTable">Create Table</button>
   </div>
 </div>
 <div>
@@ -425,7 +425,7 @@
         for (key in row) {
           if (row.hasOwnProperty(key)) {
             if (!colKeys.hasOwnProperty(key)) {
-              this.addCol(key);
+              this.addCol(key, silentAdd);
             }
           }
         }
@@ -543,7 +543,15 @@
   function onchangedb() {
     // Attempt to open our db
     var databaseName = _database.value || 'devDerby',
-        derbyDbRequest = indexedDB.open(databaseName);
+        derbyDbRequest = indexedDB.open(databaseName),
+        children,
+        i;
+
+    // Clear out table select box
+    children = _tableSelect.childNodes;
+    for (i = children.length; i--; ) {
+      _tableSelect.removeChild(children[i]);
+    }
 
     // If we are denied
     derbyDbRequest.onerror = function () {
@@ -573,11 +581,7 @@
             objectStoreName,
             i = 0,
             len = objectStoreNames.length,
-            option,
-            rows = {},
-            transaction,
-            objectStore,
-            cursor;
+            option;
 
         if (len < 1) {
           onerror('No object stores exist when one should');
@@ -588,13 +592,26 @@
           option = document.createElement('option');
           option.innerHTML = objectStoreNames[i];
           _tableSelect.appendChild(option);
-          // TODO: Clear tableSelect on DB change
         }
+
+        // Bind to the onchange event
+        _tableSelect.onchange = function () {
+          openStore(_tableSelect.value);
+        };
 
         // Choose the first alphabetical table from objectStoreNames
         objectStoreName = objectStoreNames[0];
 
-        // Then begin to collect rows
+        // Open that store
+        openStore(objectStoreName);
+      }
+
+      function openStore(objectStoreName) {
+        var rows = {},
+            transaction,
+            objectStore;
+
+        // Begin to collect rows
         transaction = derbyDb.transaction(objectStoreName);
         objectStore = transaction.objectStore(objectStoreName);
         cursorRequest = objectStore.openCursor();
@@ -731,8 +748,14 @@
         }
       }
 
-      // Helper function for creating sheets
-      function createSheet(name, callback) {
+      // Helper function for creating store
+      function createStore(name, callback) {
+        // Verify that the table doesn't already exist
+        if (derbyDb.objectStoreNames.contains(name)) {
+          _console.error('Table name already exists: ' + name);
+          console && console.error && console.error('Table name already exists: ' + name);
+        }
+
         var req = derbyDb.setVersion('0.1');
         req.onerror = onerror;
         req.onsuccess = function () {
@@ -791,11 +814,34 @@
       // If no tables are found
       if (derbyDb.objectStoreNames.length === 0) {
         // Populate our example table
-        createSheet('Example Table', continueFn);
+        createStore('Example Table', continueFn);
       } else {
       // Otherwise, invoke continueFn
         continueFn();
       }
+
+      // Bind to the create table button
+      _createTable.onclick = function () {
+        // Get the new table name
+        var newTableName = prompt('What is the name of the new table?');
+
+        // Attempt to create the new table
+        createStore(newTableName, function () {
+          // Add new option to select box
+          var option = document.createElement('option');
+          option.innerHTML = newTableName;
+          _tableSelect.appendChild(option);
+
+          // Make it selected
+          _tableSelect.childNodes[ _tableSelect.selectedIndex ].removeAttribute('selected');
+          option.setAttribute('selected', 'selected');
+
+          // Open the table
+          openStore(newTableName);
+        });
+
+        // TODO: Document double clicks, on the fly saving
+      };
     };
   }
 
