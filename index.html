@@ -30,13 +30,23 @@
       border-collapse: collapse;
     }
 
+    #table th {
+      background: #CCC;
+      padding: 20px;
+      border: 2px solid #CCC;
+    }
+
     #table td {
       border: 2px solid #CCC;
-      padding: 2px;
     }
 
     #table input {
       border: 0;
+      padding: 22px; /* Same as th padding + 2px */
+    }
+
+    #table td.disabled input {
+      visibility: hidden;
     }
 
     #console {
@@ -53,7 +63,6 @@
     In this demonstration, a sample database has been set up, via the IndexedDB API, as well as an example table. There is an interface to create more tables on the fly and edit the table fields at will.
     <br/>
     The purpose of this demonstration is to show that IndexedDB can be tapered down to represent any 'tame' store as a table.
-    <!-- TODO: Hide everything else until db connects -->
   </p>
 </div>
 <div>
@@ -62,11 +71,17 @@
   </div>
   &nbsp;&nbsp;&nbsp;&nbsp;
   <div class="labelField">
-    <label for="tableSelect">Table: </label><select id="tableSelect" name="tableSelect"></select><!-- TODO: Implement me -->
+    <label for="tableSelect">Table: </label><select id="tableSelect" name="tableSelect"></select>
   </div>
 </div>
 <div id="tableContainer">
-  <table id="table"></table>
+  <table id="table">
+    <tr id="tableHeader">
+      <th></th>
+    </tr>
+  </table>
+</div>
+<div id="jsonView">
 </div>
 <div>
   <h2>Console:</h2>
@@ -78,13 +93,26 @@
     - Add ability for formula row
       -> Add this.row, this.col, this.get(row, col), this.getRel(relRow, relCol)
     - Add multi-row editing
-    - Export functionality
     - Column/row resizing
+
+
+    - Double click for enable/disable cell
     - Swap from array-like table to object table [swapping out numeric naming schema for a mixed schema]
+    - JSON view
 
   TODO:
     - Add/delete row/col buttons [use transactions here]
     - Header rows/cols
+    - Update table select box
+    - Implement table select box
+    - Implement create table button
+    - Implement db selection
+    - onrowadd
+    - onrowdelete
+    - onrowchange
+    - Same methods for columns
+    - oncelldisable
+    - oncellenable
 -->
 <script>
 (function(window, document){
@@ -131,26 +159,29 @@
           // Localize and privitize the table
               _table = document.getElementById('table'),
               _tableParent = _table.parentNode,
+              _headerRow = document.getElementById('tableHeader'),
 
           // Private vars
+              _rows = [],
               _rowCount = 0,
-              _colCount = 0;
+              _rowIndexMap = {},
+              _colCount = 0,
+              _colIndexMap = {};
 
           // Private helper fns
           function _actOnEachRow(fn) {
-            var rows = _table.childNodes || [],
-                row,
+            var row,
                 i;
-            for (i = rows.length; i--; ) {
-              row = rows[i];
+            for (i = _rows.length; i--; ) {
+              row = _rows[i];
               fn(i, row);
             }
           }
 
-          function _getCell(row, col, val) {
+          function _createCell(rowIndex, colIndex, val) {
             // Visciously require a row and column number during construction
-            if (row === undefined || col === undefined) {
-              throw Error('Row/col not specified for cell constructor');
+            if (rowIndex === undefined || colIndex === undefined) {
+              throw new Error('Row/col not specified for cell constructor');
             }
 
             var td = document.createElement('td'),
@@ -167,7 +198,7 @@
               var val = input.value;
               if (_lastVal !== val) {
                 _lastVal = val;
-                retObj.oncellupdate(row, col, val);
+                retObj.oncellupdate(rowIndex, colIndex, val);
               }
             }
 
@@ -209,9 +240,14 @@
               _tableParent.appendChild(_table);
             },
             'flushTable': function () {
+              // TODO: Replace with delRow and delCol
+              // Clean out table
               _actOnEachRow(function (i, row) {
                 _table.removeChild(row);
               });
+
+              // Flush any memory leaks too
+              _rows = [];
             },
             'addRow': function (row) {
               row = row || [];
@@ -231,7 +267,7 @@
                         len = colDiff,
                         td;
                     for ( ; j < len; j++ ) {
-                      row.appendChild( _getCell(i, j) );
+                      row.appendChild( _createCell(i, j) );
                     }
                   });
 
@@ -247,10 +283,15 @@
                 }
               }
 
+              // Generate th for the row
+              var th = document.createElement('th');
+              th.innerHTML = _rowCount;
+              tr.appendChild(th);
+
               // Add a new row and its respective cells
               for ( ; i < len; i++ ) {
                 cellValue = row[i];
-                tr.appendChild( _getCell(_rowCount, i, cellValue) );
+                tr.appendChild( _createCell(_rowCount, i, cellValue) );
               }
 
               // Append row to table
@@ -259,7 +300,30 @@
               // Increment rowCount
               _rowCount += 1;
             },
-            // TODO: addCol
+            'addCol': function (colKey) {
+              if (_colIndexMap[colKey] !== undefined) {
+                throw new Error('Column key is already defined: ' + colKey);
+              }
+
+              // Save new colKey as the latest index
+              var j = _colCount;
+              _colIndexMap[colKey] = j;
+
+              // Add th
+              var th = document.createElement('th');
+              th.innerHTML = colKey;
+              _tableHeader.appendChild(th);
+
+              // Add new cell for each row
+              _actOnEachRow(function (i, tr) {
+                tr.appendChild( _createCell(i, j) );
+              });
+
+              // Increment colCount
+              _colCount += 1;
+
+              // TODO: Begin using addCol for addRow
+            },
             'populate': function (rows) {
               var row,
                   i,
@@ -340,7 +404,7 @@
         } else {
         // Otherwise, populate the table
           table.populate(rows);
-          
+
           // And update to the proper oncellupdate
           table.oncellupdate = function (rowIndex, colIndex, value) {
             // Update our local copy of row
@@ -349,7 +413,7 @@
                 objectStore,
                 request;
             row[colIndex] = value;
-            
+
             // Try to save to db
             transaction = derbyDb.transaction(objectStoreName, IDBTransaction.READ_WRITE);
             objectStore = transaction.objectStore(objectStoreName);
@@ -398,9 +462,6 @@
         // Begin adding rows
         addNextRow();
       }
-
-      // TODO: Update table select box
-      // TODO: Implement table select box
     }
 
     // If no tables are found
