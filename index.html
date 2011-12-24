@@ -118,6 +118,8 @@
     - Down coerce JSON to string and try to upconvert JSON to object
     - Load from CSV and JSON
     - Handle basic string case
+    - Delete table
+    - Delete database
 -->
 <script>
 (function(window, document){
@@ -137,10 +139,14 @@
       _consoleDiv = document.getElementById('console'),
       _console = {
         'error': function (msg) {
-          this.log('<span class="error">' + msg + '</span>');
+          this.log('<span class="error">' + msg + '</span>', true);
+          console && console.error && console.error(msg);
         },
-        'log': function (msg) {
-          _consoleDiv.innerHTML = '<div>[' + (new Date().toLocaleString()) + '] ' + msg + '</div>' + _consoleDiv.innerHTML;
+        'log': function (msg, dontConsoleLog) {
+          _consoleDiv.innerHTML = '<div>[' + (new Date().toLocaleString()) + '] ' + msg.replace('\n', '<br/>').replace('"', '&quot;') + '</div>' + _consoleDiv.innerHTML;
+          if (dontConsoleLog !== true) {
+            console && console.log && console.log(msg);
+          }
         }
       };
 
@@ -225,8 +231,16 @@
 
       var td = document.createElement('td'),
           input = document.createElement('input'),
-          _lastVal = val || '',
+          _lastVal = val,
           checkTimeout;
+
+      // If the value is an object, coerce it to a string
+      if (typeof val === 'object') {
+        _lastVal = JSON.stringify(val);
+      } else if (val === undefined || val === null) {
+      // Also, perform a fallback for lastVal
+        _lastVal = '';
+      }
 
       // Set up input type and value
       input.setAttribute('type', 'text');
@@ -239,10 +253,18 @@
 
       // Watch content for changes
       function checkChange() {
-        var val = input.value;
+        var val = input.value,
+            announceVal = val;
         if (_lastVal !== val) {
           _lastVal = val;
-          retObj.oncellupdate(rowKey, colKey, val);
+          
+          // Try to upcast val as an object
+          try {
+            announceVal = JSON.parse(val);
+          } catch (g) {}
+          
+          // Announce change has occurred
+          retObj.oncellupdate(rowKey, colKey, announceVal);
         }
       }
 
@@ -565,7 +587,6 @@
       // Set up error handling
       function onerror(f) {
         _console.error('An error has occurred that I have not accounted for. Please panic or refresh the page');
-        console && console.error && console.error(f);
         return;
       }
       derbyDb.onerror = onerror;
@@ -652,7 +673,7 @@
 
               // Try to save to db
               updateDb(row, rowKey, function () {
-                _console.log('Row &quot;' + rowKey + '&quot;, Column &quot;' + colKey + '&quot; successfully updated.');
+                _console.log('Row "' + rowKey + '", Column "' + colKey + '" successfully updated.');
               });
             };
 
@@ -664,7 +685,7 @@
 
               // Try to save to db
               updateDb(row, rowKey, function () {
-                _console.log('Row &quot;' + rowKey + '&quot;, Column &quot;' + colKey + '&quot; successfully enabled.');
+                _console.log('Row "' + rowKey + '", Column "' + colKey + '" successfully enabled.');
               });
             };
 
@@ -676,7 +697,7 @@
 
               // Try to save to db
               updateDb(row, rowKey, function () {
-                _console.log('Row &quot;' + rowKey + '&quot;, Column &quot;' + colKey + '&quot; successfully disabled.');
+                _console.log('Row "' + rowKey + '", Column "' + colKey + '" successfully disabled.');
               });
             };
 
@@ -687,7 +708,7 @@
 
               // Try to save to db
               updateDb(row, rowKey, function () {
-                _console.log('Row &quot;' + rowKey + '&quot; successfully added.');
+                _console.log('Row "' + rowKey + '" successfully added.');
               });
             };
 
@@ -702,13 +723,13 @@
                   request = objectStore.delete(rowKey);
               request.onerror = onerror;
               request.onsuccess = function () {
-                _console.log('Row &quot;' + rowKey + '&quot; successfully deleted.');
+                _console.log('Row "' + rowKey + '" successfully deleted.');
               };
             };
 
             // Update on column creation
             table.oncoladd = function (colKey) {
-              _console.log('Column &quot;' + colKey + '&quot; successfully added.');
+              _console.log('Column "' + colKey + '" successfully added.');
             };
 
             // Update on column deletion
@@ -738,13 +759,13 @@
 
               transaction.onerror = onerror;
               transaction.oncomplete = function () {
-                _console.log('Column &quot;' + colKey + '&quot; successfully deleted.');
+                _console.log('Column "' + colKey + '" successfully deleted.');
               };
             };
-            
+
             // Bind to output JSON button
             _outputJson.onclick = function () {
-              _console.log('JSON of &quot;' + objectStoreName + '&quot;:<br/>' + JSON.stringify(rows));
+              _console.log('JSON of "' + objectStoreName + '":\n' + JSON.stringify(rows));
             };
           }
         }
@@ -755,7 +776,6 @@
         // Verify that the table doesn't already exist
         if (derbyDb.objectStoreNames.contains(name)) {
           _console.error('Table name already exists: ' + name);
-          console && console.error && console.error('Table name already exists: ' + name);
         }
 
         var req = derbyDb.setVersion('0.1');
