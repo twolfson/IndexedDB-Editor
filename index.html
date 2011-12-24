@@ -100,9 +100,8 @@
 <div>
   <button id="addRow">Add Row</button>
 </div>
-<div id="jsonView">
-</div>
 <div>
+  <button id="outputJson">Output JSON</button>
   <h2>Console:</h2>
   <div id="console">
   </div>
@@ -113,13 +112,10 @@
       -> Add this.row, this.col, this.get(row, col), this.getRel(relRow, relCol)
     - Add multi-row editing
     - Column/row resizing
+    - Duplicate key objects
 
   TODO:
-    - Update table select box
-    - Implement create table button
-    - Implement db selection
     - Down coerce JSON to string and try to upconvert JSON to object
-    - JSON view
     - Load from CSV and JSON
     - Handle basic string case
 -->
@@ -137,6 +133,7 @@
       _changeDatabase = document.getElementById('changeDatabase'),
       _tableSelect = document.getElementById('tableSelect'),
       _createTable = document.getElementById('createTable'),
+      _outputJson = document.getElementById('outputJson'),
       _consoleDiv = document.getElementById('console'),
       _console = {
         'error': function (msg) {
@@ -743,6 +740,11 @@
               transaction.oncomplete = function () {
                 _console.log('Column &quot;' + colKey + '&quot; successfully deleted.');
               };
+            };
+            
+            // Bind to output JSON button
+            _outputJson.onclick = function () {
+              _console.log('JSON of &quot;' + objectStoreName + '&quot;:<br/>' + JSON.stringify(rows));
             };
           }
         }
