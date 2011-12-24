@@ -17,6 +17,10 @@
       margin-bottom: 1em;
     }
 
+    button {
+      cursor: pointer;
+    }
+
     .labelField {
       display: inline;
     }
@@ -24,6 +28,10 @@
     .error {
       color: red;
       font-weight: bold;
+    }
+
+    .displayNone {
+      display: none;
     }
 
     #tableContainer {
@@ -70,6 +78,47 @@
       height: 20em;
       overflow: auto;
     }
+
+    #modalBackdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 100%;
+      background: #000;
+      opacity: 0.3;
+      z-index: 9001; /* It's over 9000 */
+    }
+
+    #modalBox {
+      position: fixed;
+      top: 10%;
+      left: 24%;
+      width: 50%;
+      padding: 2%;
+      background: #FFF;
+      z-index: 9002;
+    }
+
+    #closeModalLink {
+      float: right;
+    }
+
+    #modalTableName,
+    #modalTableData {
+      width: 100%;
+    }
+
+    #modalTableData {
+      height: 400px;
+    }
+
+    #completeTableFromData {
+      display: block;
+      margin: 2% auto 0;
+      width: 120px;
+      height: 60px;
+    }
 	</style>
 </head>
 <body>
@@ -83,11 +132,17 @@
 </div>
 <div>
   <div class="labelField">
-    <label for="database">Database: </label><input id="database" name="database" type="text" value="devDerby" /> <button id="changeDatabase">Change</button>
+    <label for="database">Database: </label><input id="database" name="database" type="text" value="devDerby" />
+    &nbsp;
+    <button id="changeDatabase">Change</button>
   </div>
   &nbsp;&nbsp;&nbsp;&nbsp;
   <div class="labelField">
-    <label for="tableSelect">Table: </label><select id="tableSelect" name="tableSelect" ></select> <button id="createTable">Create Table</button>
+    <label for="tableSelect">Table: </label><select id="tableSelect" name="tableSelect" ></select>
+    &nbsp;
+    <button id="createTable">Create Table</button>
+    &nbsp;
+    <button id="createTableFromData">Create Table from CSV/JSON</button>
   </div>
 </div>
 <div>
@@ -106,6 +161,24 @@
   <div id="console">
   </div>
 </div>
+<div id="modalContainer" class="displayNone">
+  <div id="modalBackdrop"></div>
+  <div id="modalBox">
+    <a id="closeModalLink" href="javascript:;">Cancel</a>
+    <h2>Create Table from Data</h2>
+    <div class="labelField">
+      <label for="modalTableName">Table name:</label>
+      <br/>
+      <input id="modalTableName" name="modalTableName" type="text" />
+    </div>
+    <div class="labelField">
+      <label for="modalTableData">CSV/JSON Data:</label>
+      <br/>
+      <textarea id="modalTableData" name="modalTableData"></textarea>
+    </div>
+    <button id="completeTableFromData">Create Table</button>
+  </div>
+</div>
 <!--
   Neat but not sure if I will do:
     - Add ability for formula row
@@ -113,10 +186,9 @@
     - Add multi-row editing
     - Column/row resizing
     - Duplicate key objects
+    - Robustly interpret a CSV
 
   TODO:
-    - Down coerce JSON to string and try to upconvert JSON to object
-    - Load from CSV and JSON
     - Handle basic string case
     - Delete table
     - Delete database
@@ -135,6 +207,7 @@
       _changeDatabase = document.getElementById('changeDatabase'),
       _tableSelect = document.getElementById('tableSelect'),
       _createTable = document.getElementById('createTable'),
+      _createTableFromData = document.getElementById('createTableFromData'),
       _outputJson = document.getElementById('outputJson'),
       _consoleDiv = document.getElementById('console'),
       _console = {
@@ -198,6 +271,46 @@
     }
   };
 
+  // Hook up modal bindings
+  // Objectify modal
+  var modal = (function(document){
+    var _modalContainer = document.getElementById('modalContainer'),
+        _modalTableName = document.getElementById('modalTableName'),
+        _modalTableData = document.getElementById('modalTableData'),
+        _closeModalLink = document.getElementById('closeModalLink'),
+        _completeTableFromData = document.getElementById('completeTableFromData'),
+        retObj = {
+          'show': function () {
+            _modalContainer.className = '';
+          },
+          'hide': function () {
+            _modalContainer.className = 'displayNone';
+          },
+          'clear': function () {
+            _modalTableName.value = '';
+            _modalTableData.value = '';
+          },
+          'onsubmit': noop
+        };
+
+    // Bind to own close link
+    _closeModalLink.onclick = function () {
+      retObj.hide();
+    };
+
+    // Bind to submit data
+    _completeTableFromData.onclick = function () {
+      retObj.onsubmit(_modalTableName.value, _modalTableData.value);
+    };
+
+   return retObj;
+  }(document));
+
+  // Add external bind to show modal
+  _createTableFromData.onclick = function () {
+    modal.show();
+  };
+
   // Objectify table
   var table = (function(document){
     var retObj = {},
@@ -257,12 +370,12 @@
             announceVal = val;
         if (_lastVal !== val) {
           _lastVal = val;
-          
+
           // Try to upcast val as an object
           try {
             announceVal = JSON.parse(val);
           } catch (g) {}
-          
+
           // Announce change has occurred
           retObj.oncellupdate(rowKey, colKey, announceVal);
         }
@@ -328,7 +441,7 @@
     retObj = {
       'removeFromFlow': function () {
         _tableParent.removeChild(_table);
-        _table.setAttribute('style', 'display: none');
+        _table.className = 'displayNone';
 
         // Set this to a noop
         var that = this,
@@ -347,7 +460,7 @@
         };
       },
       'returnToFlow': function () {
-        _table.setAttribute('style', '');
+        _table.className = '';
         _tableParent.appendChild(_table);
       },
       'flushTable': function () {
@@ -772,7 +885,7 @@
       }
 
       // Helper function for creating store
-      function createStore(name, callback) {
+      function createStore(name, data, callback) {
         // Verify that the table doesn't already exist
         if (derbyDb.objectStoreNames.contains(name)) {
           _console.error('Table name already exists: ' + name);
@@ -780,12 +893,12 @@
 
         var req = derbyDb.setVersion('0.1');
         req.onerror = onerror;
-        req.onsuccess = function () {
+        req.onsuccess = function (rowObjs) {
           var newStore = derbyDb.createObjectStore(name),
               // ''     'Hello' 'and'       'welcome'       'to'
               // 'my'   'MDN'   'Dev Derby' 'demonstration' -
               // 'of'   -       -           -               'IndexedDB'
-              rowObjs = {
+              rowObjs = data || {
                 'my': {
                   'Hello': 'MDN',
                   'and': 'Dev Derby',
@@ -836,19 +949,14 @@
       // If no tables are found
       if (derbyDb.objectStoreNames.length === 0) {
         // Populate our example table
-        createStore('Example Table', continueFn);
+        createStore('Example Table', null, continueFn);
       } else {
       // Otherwise, invoke continueFn
         continueFn();
       }
 
-      // Bind to the create table button
-      _createTable.onclick = function () {
-        // Get the new table name
-        var newTableName = prompt('What is the name of the new table?');
-
-        // Attempt to create the new table
-        createStore(newTableName, function () {
+      function afterCreateStore(newTableName) {
+        return function () {
           // Add new option to select box
           var option = document.createElement('option');
           option.innerHTML = newTableName;
@@ -860,9 +968,48 @@
 
           // Open the table
           openStore(newTableName);
-        });
+        };
+      }
+
+      // Bind to the create table button
+      _createTable.onclick = function () {
+        // Get the new table name
+        var newTableName = prompt('What is the name of the new table?');
+
+        // Attempt to create the new table
+        createStore(newTableName, null, afterCreateStore(newTableName));
 
         // TODO: Document double clicks, on the fly saving
+      };
+
+      // Bind to the create table
+      modal.onsubmit = function (name, data) {
+        // Hide the modal
+        modal.hide();
+
+        // Attempt to interpret JSON
+        var objData;
+        try {
+          objData = JSON.parse(data);
+        } catch (h) {}
+
+        // If no JSON was parsed
+        if (objData === undefined) {
+          // Interpret as a CSV
+          objData = data.split(/\n/g);
+
+          // Iterate each row and break down the commas
+          var i = objData.length;
+          while (i--) {
+            objData[i] = objData[i].split(/,/g);
+          }
+        }
+
+        // Create the table
+        createStore(name, objData, afterCreateStore(name));
+
+        // Clear the fields
+        modal.clear();
       };
     };
   }
