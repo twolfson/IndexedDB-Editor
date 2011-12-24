@@ -31,6 +31,10 @@
     h2 {
       display: inline;
     }
+    
+    li:before {
+      content: "\00A0\2022\00A0";
+    }
 
     .labelField{
       display: inline;
@@ -164,13 +168,20 @@
 	</style>
 </head>
 <body>
-<h1>IndexedDB Demonstration</h1>
+<h1>IndexedDB Editor</h1>
 <div>
   <p>
     In this demonstration, a sample database has been set up, via the IndexedDB API, as well as an example table. There is an interface to create more tables on the fly and edit the table fields at will.
     <br/>
-    The purpose of this demonstration is to show that IndexedDB can be tapered down to represent any 'tame' store as a table.
+    The purpose of this demonstration is to show that IndexedDB can be tapered down to represent any <span title="A store containing no duplicate keys">'tame'</span> store as a table.
+    <br/>
   </p>
+  <p>
+    This project started off quite simply from loading arrays and now has grown into a full-blown editor. Some non-self-explanatory features are:
+    <ul>
+      <li>To enable/disable a property for an object, double click on the cell that you would like to add/remove.</li>
+      <li>Click and type on a field to edit it. Changes are automatically saved and logged when they occur.</li>
+    </ul>
 </div>
 <div>
   <div class="labelField">
@@ -252,10 +263,6 @@
     - Duplicate key objects
     - Robustly interpret a CSV
     - Objectify select box
-
-  TODO:
-    - Main key manager and first-action for any key edits
-    - Document double clicks, on the fly saving
 -->
 <script>
 (function(window, document){
@@ -1212,7 +1219,7 @@
                 'of': {
                   'to': 'IndexedDB'
                 },
-                'December': '2011'
+                'Month': 'December 2011'
               },
               key,
               rowKeyArr = [],
