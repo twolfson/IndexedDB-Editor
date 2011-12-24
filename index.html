@@ -159,7 +159,7 @@
           // Localize and privitize the table
               _table = document.getElementById('table'),
               _tableParent = _table.parentNode,
-              _headerRow = document.getElementById('tableHeader'),
+              _tableHeader = document.getElementById('tableHeader'),
 
           // Private vars
               _rows = [],
@@ -176,6 +176,24 @@
               row = _rows[i];
               fn(i, row);
             }
+          }
+
+          function _getColNameArr() {
+            var colNameArr = [];
+
+            // Collect all the indices
+            for (key in _colIndexMap) {
+              if (_colIndexMap.hasOwnProperty(key)) {
+                colNameArr.push(key);
+              }
+            }
+
+            // Sort the indicies
+            colNameArr.sort(function (key1, key2) {
+              return _colIndexMap[key1] > _colIndexMap[key2];
+            });
+
+            return colNameArr;
           }
 
           function _createCell(rowIndex, colIndex, val) {
@@ -250,49 +268,48 @@
               _rows = [];
             },
             'addRow': function (row) {
-              row = row || [];
               var tr = document.createElement('tr'),
-                  cellValue,
-                  i = 0,
-                  len = row.length,
-                  colDiff = len - _colCount;
-
-              // If there is a different number of columns in this row than there are in the table
-              if (colDiff !== 0) {
-                // Then, if there are more columns
-                if (colDiff > 0) {
-                  // Add columns to previous rows
-                  _actOnEachRow(function (i, row) {
-                    var j = 0,
-                        len = colDiff,
-                        td;
-                    for ( ; j < len; j++ ) {
-                      row.appendChild( _createCell(i, j) );
-                    }
-                  });
-
-                  // Save new colCount
-                  _colCount = len;
-                } else {
-                // Otherwise, add columns to this row
-                  // The only smart time to use new Array
-                  row = row.concat(new Array(colDiff));
-
-                  // Save new row length
-                  len = _colCount;
-                }
-              }
+                  key,
 
               // Generate th for the row
-              var th = document.createElement('th');
+                  th = document.createElement('th');
               th.innerHTML = _rowCount;
               tr.appendChild(th);
 
-              // Add a new row and its respective cells
-              for ( ; i < len; i++ ) {
-                cellValue = row[i];
-                tr.appendChild( _createCell(_rowCount, i, cellValue) );
+              // Iterate the keys and generate any new columns
+              for (key in row) {
+                if (row.hasOwnProperty(key)) {
+                  if (_colIndexMap[key] === undefined) {
+                    this.addCol(key);
+                  }
+                }
               }
+
+              // Iterate the table's columns
+              var colNameArr = _getColNameArr(),
+                  colName,
+                  i = _rowCount,
+                  j = 0,
+                  len = colNameArr.length,
+                  td;
+
+              for ( ; j < len; j++ ) {
+                // Localize column name
+                colName = colNameArr[j];
+
+                // Populate the cell
+                td = _createCell(i, j, row[colName]);
+
+                // If the object does not have a corresponding key, disable the cell
+                if (!row.hasOwnProperty(colName)) {
+                  td.className = 'disabled';
+                }
+
+                // Append the cell to the row
+                tr.appendChild(td);
+              }
+
+              // TODO: Double click disable/enable cell
 
               // Append row to table
               _table.appendChild(tr);
