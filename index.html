@@ -43,11 +43,18 @@
 
     #table td {
       border: 2px solid #CCC;
+      background: #FFF;
+      cursor: text;
+    }
+
+    #table td.disabled {
+      background: inherit;
+      cursor: inherit;
     }
 
     #table input {
       border: 0;
-      padding: 22px; /* Same as th padding + 2px */
+      padding: 1em;
     }
 
     #table td.disabled input {
@@ -86,9 +93,6 @@
 <div>
   <div id="tableContainer">
     <table id="table">
-      <tr id="tableHeader">
-        <th></th>
-      </tr>
     </table>
   </div>
   <button id="addCol">Add Column</button>
@@ -116,10 +120,6 @@
     - Implement table select box
     - Implement create table button
     - Implement db selection
-    - onrowadd
-    - onrowdelete
-    - onrowchange
-    - Same methods for columns
     - Down coerce JSON to string and try to upconvert JSON to object
     - JSON view
     - Load from CSV and JSON
@@ -214,7 +214,9 @@
           // Localize and privitize the table
               _table = document.getElementById('table'),
               _tableParent = _table.parentNode,
-              _tableHeader = document.getElementById('tableHeader'),
+              _tableHeader = document.createElement('tr');
+          _tableHeader.appendChild( document.createElement('th') );
+          _table.appendChild(_tableHeader);
 
           // Private vars
               _rows = [],
@@ -284,6 +286,15 @@
             // Append the input to the td
             td.appendChild(input);
 
+            // On a single click of the td, focus to the input
+            td.onclick = function () {
+              // Only if the td is enabled
+              var className = td.className;
+              if (className === undefined || className === '') {
+                input.focus();
+              }
+            }
+
             // On a double click of the td, enable/disable the cell
             td.ondblclick = function () {
               var className = td.className;
@@ -346,30 +357,48 @@
               this.onrowdelete(rowKey);
             },
             'deleteCol': function (colKey) {
+              // Take out of the DOM for reduction of reflows
+              this.removeFromFlow();
 
+              // Grab the current array of rows
+              var colKeys = _colIndexer.arr,
+                  index = colKeys.indexOf(colKey),
+                  cellIndex = index + 1;
+
+              // Remove header row's cell
+              _tableHeader.removeChild( _tableHeader.childNodes[cellIndex] );
+
+              // Remove the column's cell from each row
+              _actOnEachRow(function (i, row) {
+                row.removeChild( row.childNodes[cellIndex] );
+              });
+
+              // Remove the key from the indexer
+              _colIndexer['delete'](colKey);
+
+              // Shove back in the DOM
+              this.returnToFlow();
+
+              // Announce event
+              this.oncoldelete(colKey);
             },
             'addRow': function (rowKey, row, silentAdd) {
-              row = row || {};
               var that = this,
                   tr = document.createElement('tr'),
                   th = document.createElement('th'),
                   deleteButton = document.createElement('button'),
-                  renameButton = document.createElement('button'),
                   colKeys = _colIndexer.map,
                   key;
 
-              // Set up bindings for delete and rename buttons
+              // Set up bindings for delete button
               deleteButton.innerHTML = 'Delete row';
               deleteButton.onclick = function () {
                 that.deleteRow(rowKey);
               };
 
-              // TODO: Renamebutton
-
               // Generate th for the row
-              th.innerHTML = rowKey;
+              th.innerHTML = rowKey + '<br/>';
               th.appendChild(deleteButton);
-              th.appendChild(renameButton);
               tr.appendChild(th);
 
               // Iterate the keys and generate any new columns
@@ -409,20 +438,30 @@
 
               // Announce addition
               if (silentAdd !== true) {
-                this.onrowadd(rowKey);
+                this.onrowadd(rowKey, row);
               }
             },
             'addCol': function (colKey, silentAdd) {
+              var that = this,
+                  th = document.createElement('th'),
+                  deleteButton = document.createElement('button');
+
+              // Set up bindings for delete button
+              deleteButton.innerHTML = 'Delete column';
+              deleteButton.onclick = function () {
+                that.deleteCol(colKey);
+              };
+
               // Add th
-              var th = document.createElement('th');
-              th.innerHTML = colKey;
+              th.innerHTML = colKey + '<br/>';
+              th.appendChild(deleteButton);
               _tableHeader.appendChild(th);
 
               // Add new cell for each row
-             var rowKeys = _rowIndexer.arr;
-              _actOnEachRow(function (i, tr) {
+              var rowKeys = _rowIndexer.arr;
+              _actOnEachRow(function (i, row) {
                 var rowKey = rowKeys[i];
-                tr.appendChild( _createCell(rowKey, colKey) );
+                row.appendChild( _createCell(rowKey, colKey) );
               });
 
               // Index latest key
@@ -430,7 +469,7 @@
 
               // Announce addition
               if (silentAdd !== true) {
-                this.oncolumnadd(colKey);
+                this.oncoladd(colKey);
               }
             },
             'populate': function (rows) {
@@ -460,12 +499,10 @@
             // Row methods
             'onrowadd': noop,
             'onrowdelete': noop,
-            'onrowrename': noop,
 
             // Column methods
-            'oncolumnadd': noop,
-            'oncolumndelete': noop,
-            'oncolumnrename': noop
+            'oncoladd': noop,
+            'oncoldelete': noop
           };
 
           // Listen to addRow and addColumn and trigger appropriate functions
@@ -610,14 +647,58 @@
           };
 
           // Update on column creation
-          table.oncolumnadd = function (colKey) {
+          table.oncoladd = function (colKey) {
             _console.log('Column &quot;' + colKey + '&quot; successfully added.');
           };
 
           // Update on column deletion
-          table.oncolumndelete = function (colKey) {
-            // TODO: Update all rows??
-            _console.log('Column &quot;' + colKey + '&quot; successfully deleted.');
+          table.oncoldelete = function (colKey) {
+            var fnQueue = [],
+                callbackCount = 0,
+                totalCallbacks = 0,
+                row,
+                rowKey,
+                i;
+
+            function onAllSuccess() {
+              _console.log('Column &quot;' + colKey + '&quot; successfully deleted.');
+            }
+
+            function eachSuccess() {
+              callbackCount += 1;
+              if (callbackCount >= totalCallbacks) {
+                onAllSuccess();
+              }
+            }
+
+            // Iterate each row
+            for (rowKey in rows) {
+              if (rows.hasOwnProperty(rowKey)) {
+                row = rows[rowKey];
+
+                // If it has the property listed
+                if (row.hasOwnProperty(colKey)) {
+                  // Delete row's entry
+                  delete row[colKey];
+
+                  // Increase amount of callbacks
+                  totalCallbacks += 1;
+
+                  // Add a function to the queue
+                  (function(fnQueue, row, rowKey, eachSuccess){
+                  fnQueue.push(function () {
+                    // Try to save to db
+                    updateDb(row, rowKey, eachSuccess);
+                  });
+                  }(fnQueue, row, rowKey, eachSuccess));
+                }
+              }
+            }
+
+            // Iterate and run the queue
+            for (i = fnQueue.length; i--; ) {
+              fnQueue[i]();
+            }
           };
         }
       }
