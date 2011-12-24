@@ -31,7 +31,7 @@
     }
 
     #table th {
-      background: #CCC;
+      background: #E9E9E9;
       padding: 20px;
       border: 2px solid #CCC;
     }
@@ -97,12 +97,10 @@
 
 
     - Double click for enable/disable cell
-    - Swap from array-like table to object table [swapping out numeric naming schema for a mixed schema]
     - JSON view
 
   TODO:
     - Add/delete row/col buttons [use transactions here]
-    - Header rows/cols
     - Update table select box
     - Implement table select box
     - Implement create table button
@@ -113,11 +111,19 @@
     - Same methods for columns
     - oncelldisable
     - oncellenable
+    - Robust test object edit/save
+    - Down coerce JSON to string and try to upconvert JSON to object
 -->
 <script>
 (function(window, document){
-  // Fallback and globalize indexedDB
-  var indexedDB = window.indexedDB = window.indexedDB || window.mozIndexedDB || window.webkitIndexedDB,
+  // Fallback and globalize indexedDB variables
+  window.indexedDB = window.indexedDB || window.mozIndexedDB || window.webkitIndexedDB;
+  window.IDBTransaction = window.IDBTransaction || window.webkitIDBTransaction;
+  window.IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange;
+  window.IDBCursor = window.IDBCursor || window.webkitIDBCursor;
+
+  // Localize indexedDB
+  var indexedDB = window.indexedDB,
       _consoleDiv = document.getElementById('console'),
       _console = {
         'error': function (msg) {
@@ -155,6 +161,41 @@
     var derbyDb = e.target.result,
     // Objectify the table
         table = (function(document){
+          function Indexer() {
+            this.arr = [];
+            this.map = {};
+            this.counter = 0;
+          }
+
+          Indexer.prototype = {
+            'push': function (key) {
+              var map = this.map;
+              if (map.hasOwnProperty(key)) {
+                throw new Error('Indexer key is already defined: ' + key);
+              }
+              // Save key to counter value (preserves order even through decrement)
+              map[key] = this.counter;
+
+              // Add item to array
+              this.arr.push(key);
+
+              // Increment counter
+              this.counter += 1;
+            },
+            'delete': function (key) {
+              // Delete from map
+              delete map[key];
+
+              // Find and remove item from array
+              var arr = this.arr,
+                  arrIndex = arr.indexOf(key);
+              arr.splice(arrIndex, 1);
+            },
+            'count': function () {
+              return this.arr.length;
+            }
+          };
+
           var retObj = {},
           // Localize and privitize the table
               _table = document.getElementById('table'),
@@ -163,10 +204,10 @@
 
           // Private vars
               _rows = [],
-              _rowCount = 0,
-              _rowIndexMap = {},
-              _colCount = 0,
-              _colIndexMap = {};
+              _rowIndexer = new Indexer(),
+              _colIndexer = new Indexer();
+              /*              _colCount = 0,
+              _colIndexMap = {}; */
 
           // Private helper fns
           function _actOnEachRow(fn) {
@@ -178,27 +219,9 @@
             }
           }
 
-          function _getColNameArr() {
-            var colNameArr = [];
-
-            // Collect all the indices
-            for (key in _colIndexMap) {
-              if (_colIndexMap.hasOwnProperty(key)) {
-                colNameArr.push(key);
-              }
-            }
-
-            // Sort the indicies
-            colNameArr.sort(function (key1, key2) {
-              return _colIndexMap[key1] > _colIndexMap[key2];
-            });
-
-            return colNameArr;
-          }
-
-          function _createCell(rowIndex, colIndex, val) {
+          function _createCell(rowKey, colKey, val) {
             // Visciously require a row and column number during construction
-            if (rowIndex === undefined || colIndex === undefined) {
+            if (rowKey === undefined || colKey === undefined) {
               throw new Error('Row/col not specified for cell constructor');
             }
 
@@ -211,12 +234,17 @@
             input.setAttribute('type', 'text');
             input.value = _lastVal;
 
+            // If the the value is undefined, disable the cell
+            if (val === undefined) {
+              td.className = 'disabled';
+            }
+
             // Watch content for changes
             function checkChange() {
               var val = input.value;
               if (_lastVal !== val) {
                 _lastVal = val;
-                retObj.oncellupdate(rowIndex, colIndex, val);
+                retObj.oncellupdate(rowKey, colKey, val);
               }
             }
 
@@ -267,28 +295,29 @@
               // Flush any memory leaks too
               _rows = [];
             },
-            'addRow': function (row) {
+            'addRow': function (rowKey, row) {
               var tr = document.createElement('tr'),
-                  key,
+                  th = document.createElement('th'),
+                  colKeys = _colIndexer.map,
+                  key;
 
               // Generate th for the row
-                  th = document.createElement('th');
-              th.innerHTML = _rowCount;
+              th.innerHTML = rowKey;
               tr.appendChild(th);
 
               // Iterate the keys and generate any new columns
               for (key in row) {
                 if (row.hasOwnProperty(key)) {
-                  if (_colIndexMap[key] === undefined) {
+                  if (!colKeys.hasOwnProperty(key)) {
                     this.addCol(key);
                   }
                 }
               }
 
               // Iterate the table's columns
-              var colNameArr = _getColNameArr(),
+              var colNameArr = _colIndexer.arr,
                   colName,
-                  i = _rowCount,
+                  i = _rowIndexer.count(),
                   j = 0,
                   len = colNameArr.length,
                   td;
@@ -298,14 +327,9 @@
                 colName = colNameArr[j];
 
                 // Populate the cell
-                td = _createCell(i, j, row[colName]);
+                td = _createCell(rowKey, colName, row[colName]);
 
-                // If the object does not have a corresponding key, disable the cell
-                if (!row.hasOwnProperty(colName)) {
-                  td.className = 'disabled';
-                }
-
-                // Append the cell to the row
+                 // Append the cell to the row
                 tr.appendChild(td);
               }
 
@@ -314,37 +338,28 @@
               // Append row to table
               _table.appendChild(tr);
 
-              // Increment rowCount
-              _rowCount += 1;
+              // Increment rowCount and save to rows
+              _rows.push(tr);
+              _rowIndexer.push(rowKey);
             },
             'addCol': function (colKey) {
-              if (_colIndexMap[colKey] !== undefined) {
-                throw new Error('Column key is already defined: ' + colKey);
-              }
-
-              // Save new colKey as the latest index
-              var j = _colCount;
-              _colIndexMap[colKey] = j;
-
               // Add th
               var th = document.createElement('th');
               th.innerHTML = colKey;
               _tableHeader.appendChild(th);
 
               // Add new cell for each row
+             var rowKeys = _rowIndexer.arr;
               _actOnEachRow(function (i, tr) {
-                tr.appendChild( _createCell(i, j) );
+                var rowKey = rowKeys[i];
+                tr.appendChild( _createCell(rowKey, colKey) );
               });
 
-              // Increment colCount
-              _colCount += 1;
-
-              // TODO: Begin using addCol for addRow
+              // Index latest key
+              _colIndexer.push(colKey);
             },
             'populate': function (rows) {
-              var row,
-                  i,
-                  len;
+              var key;
 
               // Hide the table and remove it from the DOM (reduce repaints/reflows)
               this.removeFromFlow();
@@ -352,11 +367,11 @@
               // Clean out the table
               this.flushTable();
 
-              // Fallback rows
-              rows = rows || [];
-              for (i = 0, len = rows.length; i < len; i++ ) {
-                row = rows[i];
-                this.addRow(row);
+              // Iterate object and add rows
+              for (key in rows) {
+                if (rows.hasOwnProperty(key)) {
+                  this.addRow(key, rows[key]);
+                }
               }
 
               // Unhide the table
@@ -382,7 +397,7 @@
     function continueFn() {
       var objectStoreNames = derbyDb.objectStoreNames,
           objectStoreName,
-          rows = [],
+          rows = {},
           transaction,
           objectStore,
           cursor;
@@ -412,8 +427,7 @@
           getRequest.onerror = onerror;
           getRequest.onsuccess = function () {
             // And add it to a new row
-            // TODO: Actually use keys (cursor.key) for rows
-            rows.push( getRequest.result );
+            rows[cursor.key] = getRequest.result;
 
             // Continue to next row
             cursor.continue();
@@ -450,12 +464,31 @@
       req.onerror = onerror;
       req.onsuccess = function () {
         var newStore = derbyDb.createObjectStore(name),
-            rows = [
-              ['Hello', 'and', 'welcome', 'to'],
-              ['my', 'IndexedDB', 'Dev Derby', 'Entry']
-            ],
+            // ''     'Hello' 'and'       'welcome'       'to'
+            // 'my'   'MDN'   'Dev Derby' 'demonstration' -
+            // 'of'   -       -           -               'IndexedDB'
+            rowObjs = {
+              'my': {
+                'Hello': 'MDN',
+                'and': 'Dev Derby',
+                'welcome': 'demonstration'
+              },
+              'of': {
+                'to': 'IndexedDB'
+              }
+            },
+            key,
+            rowKeyArr = [],
             i = 0,
-            len = rows.length;
+            len;
+
+        // Populate rowArr
+        for (key in rowObjs) {
+          if (rowObjs.hasOwnProperty(key)) {
+            rowKeyArr.push(key);
+          }
+        }
+        len = rowKeyArr.length;
 
         function addNextRow() {
           // If we have added all the rows, call our callback
@@ -467,7 +500,8 @@
           }
 
           // Add row to store
-          var putRequest = newStore.put(rows[i], i);
+          var rowKey = rowKeyArr[i],
+              putRequest = newStore.put(rowObjs[rowKey], rowKey);
           putRequest.onerror = onerror;
           putRequest.onsuccess = function () {
             // Increment and continue looping
