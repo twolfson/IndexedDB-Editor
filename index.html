@@ -21,7 +21,13 @@
       cursor: pointer;
     }
 
-    .labelField {
+    fieldset {
+      display: inline;
+      float: right;
+      padding: 3px;
+    }
+
+    .labelField{
       display: inline;
     }
 
@@ -144,6 +150,11 @@
     &nbsp;
     <button id="createTableFromData">Create Table from CSV/JSON</button>
   </div>
+  <fieldset>
+    <legend>Deletion Methods</legend>
+    <button id="deleteDifferentDatabase">Delete a different database</button>
+    <button id="deleteTable">Delete this table</button>
+  </fieldset>
 </div>
 <div>
   <div id="tableContainer">
@@ -187,11 +198,10 @@
     - Column/row resizing
     - Duplicate key objects
     - Robustly interpret a CSV
+    - Objectify select box
 
   TODO:
     - Handle basic string case
-    - Delete table
-    - Delete database
 -->
 <script>
 (function(window, document){
@@ -208,6 +218,8 @@
       _tableSelect = document.getElementById('tableSelect'),
       _createTable = document.getElementById('createTable'),
       _createTableFromData = document.getElementById('createTableFromData'),
+      _deleteDifferentDatabase = document.getElementById('deleteDifferentDatabase'),
+      _deleteTable = document.getElementById('deleteTable'),
       _outputJson = document.getElementById('outputJson'),
       _consoleDiv = document.getElementById('console'),
       _console = {
@@ -216,7 +228,7 @@
           console && console.error && console.error(msg);
         },
         'log': function (msg, dontConsoleLog) {
-          _consoleDiv.innerHTML = '<div>[' + (new Date().toLocaleString()) + '] ' + msg.replace('\n', '<br/>').replace('"', '&quot;') + '</div>' + _consoleDiv.innerHTML;
+          _consoleDiv.innerHTML = '<div>[' + (new Date().toLocaleString()) + '] ' + msg.replace('\n', '<br/>') + '</div>' + _consoleDiv.innerHTML;
           if (dontConsoleLog !== true) {
             console && console.log && console.log(msg);
           }
@@ -232,6 +244,22 @@
 
   function noop() {
   }
+
+  // Bind to database deletion
+  _deleteDifferentDatabase.onclick = function () {
+    try {
+      var dbName = prompt('What is the name of the database you would like to delete?'),
+          request = indexedDB.deleteDatabase(dbName);
+      request.onerror = function (f) {
+        _console.error('The requested database ' + dbName + ' could not be deleted.' + e);
+      };
+      request.onsuccess = function () {
+        _console.log('The requested database ' + dbName + ' was successfully deleted.');
+      };
+    } catch (e) {
+      _console.error('Your browser does not currently support database deletion.\nPlease refer to: https://developer.mozilla.org/en/IndexedDB/IDBFactory#Browser_compatibility');
+    }
+  };
 
   function Indexer() {
     this.clear();
@@ -273,7 +301,7 @@
 
   // Hook up modal bindings
   // Objectify modal
-  var modal = (function(document){
+  var $modal = (function(document){
     var _modalContainer = document.getElementById('modalContainer'),
         _modalTableName = document.getElementById('modalTableName'),
         _modalTableData = document.getElementById('modalTableData'),
@@ -308,11 +336,11 @@
 
   // Add external bind to show modal
   _createTableFromData.onclick = function () {
-    modal.show();
+    $modal.show();
   };
 
   // Objectify table
-  var table = (function(document){
+  var $table = (function(document){
     var retObj = {},
     // Localize and privitize the table
         _table = document.getElementById('table'),
@@ -718,8 +746,14 @@
           onerror('No object stores exist when one should');
         }
 
+        // Clear out table select box [for safe measure]
+        var children = _tableSelect.childNodes;
+        for (i = children.length; i--; ) {
+          _tableSelect.removeChild(children[i]);
+        }
+
         // Populate the select box with store names
-        for ( ; i < len; i++ ) {
+        for (i = 0; i < len; i++ ) {
           option = document.createElement('option');
           option.innerHTML = objectStoreNames[i];
           _tableSelect.appendChild(option);
@@ -768,7 +802,7 @@
             };
           } else {
           // Otherwise, populate the table
-            table.populate(rows);
+            $table.populate(rows);
 
             updateDb = function (value, key, successFn) {
               var transaction = derbyDb.transaction(objectStoreName, IDBTransaction.READ_WRITE),
@@ -779,7 +813,7 @@
             };
 
             // And update to the proper oncellupdate
-            table.oncellupdate = function (rowKey, colKey, value) {
+            $table.oncellupdate = function (rowKey, colKey, value) {
               // Update our local copy of row
               var row = rows[rowKey];
               row[colKey] = value;
@@ -791,7 +825,7 @@
             };
 
             // Update on a cell enable
-            table.oncellenable = function (rowKey, colKey, value) {
+            $table.oncellenable = function (rowKey, colKey, value) {
               // Update our local copy of row
               var row = rows[rowKey];
               row[colKey] = value || '';
@@ -803,7 +837,7 @@
             };
 
             // Update on a cell disable
-            table.oncelldisable = function (rowKey, colKey, value) {
+            $table.oncelldisable = function (rowKey, colKey, value) {
               // Update our local copy of row
               var row = rows[rowKey];
               delete row[colKey];
@@ -815,7 +849,7 @@
             };
 
             // Update on row creation
-            table.onrowadd = function (rowKey, row) {
+            $table.onrowadd = function (rowKey, row) {
               // Update our local copy of row
               rows[rowKey] = row;
 
@@ -826,7 +860,7 @@
             };
 
             // Update on row deletion
-            table.onrowdelete = function (rowKey) {
+            $table.onrowdelete = function (rowKey) {
               // Update our local copy of row
               delete rows[rowKey];
 
@@ -841,12 +875,12 @@
             };
 
             // Update on column creation
-            table.oncoladd = function (colKey) {
+            $table.oncoladd = function (colKey) {
               _console.log('Column "' + colKey + '" successfully added.');
             };
 
             // Update on column deletion
-            table.oncoldelete = function (colKey) {
+            $table.oncoldelete = function (colKey) {
               // Open a transaction since this is a multi-item edit
               var transaction = derbyDb.transaction(objectStoreName, IDBTransaction.READ_WRITE),
                   objectStore = transaction.objectStore(objectStoreName),
@@ -880,6 +914,26 @@
             _outputJson.onclick = function () {
               _console.log('JSON of "' + objectStoreName + '":\n' + JSON.stringify(rows));
             };
+
+            // Bind to deletion of table
+            _deleteTable.onclick = function () {
+              // Open up the db for reversioning
+              var req = derbyDb.setVersion('0.1');
+              req.onerror = onerror;
+              req.onsuccess = function () {
+                // Make our delete request
+                try {
+                  var deleteRequest = derbyDb.deleteObjectStore(objectStoreName);
+                } catch (h) {
+                  onerror();
+                }
+                // Announce the success
+                _console.log('Table "' + objectStoreName + '" successfully deleted');
+
+                // Open the next available table
+                openCreateFirstStore();
+              }
+            }
           }
         }
       }
@@ -893,7 +947,7 @@
 
         var req = derbyDb.setVersion('0.1');
         req.onerror = onerror;
-        req.onsuccess = function (rowObjs) {
+        req.onsuccess = function () {
           var newStore = derbyDb.createObjectStore(name),
               // ''     'Hello' 'and'       'welcome'       'to'
               // 'my'   'MDN'   'Dev Derby' 'demonstration' -
@@ -946,14 +1000,17 @@
         }
       }
 
-      // If no tables are found
-      if (derbyDb.objectStoreNames.length === 0) {
-        // Populate our example table
-        createStore('Example Table', null, continueFn);
-      } else {
-      // Otherwise, invoke continueFn
-        continueFn();
+      function openCreateFirstStore() {
+        // If no tables are found
+        if (derbyDb.objectStoreNames.length === 0) {
+          // Populate our example table
+          createStore('Example Table', null, continueFn);
+        } else {
+        // Otherwise, invoke continueFn
+          continueFn();
+        }
       }
+      openCreateFirstStore();
 
       function afterCreateStore(newTableName) {
         return function () {
@@ -982,10 +1039,10 @@
         // TODO: Document double clicks, on the fly saving
       };
 
-      // Bind to the create table
-      modal.onsubmit = function (name, data) {
+      // Bind to the create table with data
+      $modal.onsubmit = function (name, data) {
         // Hide the modal
-        modal.hide();
+        $modal.hide();
 
         // Attempt to interpret JSON
         var objData;
@@ -1008,8 +1065,8 @@
         // Create the table
         createStore(name, objData, afterCreateStore(name));
 
-        // Clear the fields
-        modal.clear();
+        // // Clear the fields
+        // $modal.clear();
       };
     };
   }
