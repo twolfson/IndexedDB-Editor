@@ -1,0 +1,1339 @@
+<!doctype>
+<html>
+<head>
+	<title>MDN Derby - December 2011</title>
+	<style>
+    /* Visual fixes (poor man's reset/normalize.css) */
+		* {
+			margin: 0;
+			padding: 0;
+		}
+
+    body {
+      background: linen;
+    }
+
+    body > div {
+      margin-bottom: 1em;
+    }
+
+    button {
+      cursor: pointer;
+      vertical-align: text-bottom;
+    }
+
+    fieldset {
+      display: inline;
+      float: right;
+      padding: 3px;
+    }
+
+    h2 {
+      display: inline;
+    }
+    
+    li:before {
+      content: "\00A0\2022\00A0";
+    }
+
+    .labelField{
+      display: inline;
+    }
+
+    .error {
+      color: red;
+      font-weight: bold;
+    }
+
+    .hidden {
+      visibility: hidden;
+    }
+
+    .displayNone {
+      display: none;
+    }
+
+    #table {
+      border-collapse: collapse;
+      display: inline;
+    }
+
+    #table th {
+      background: #E9E9E9;
+      padding: 20px;
+      border: 2px solid #CCC;
+    }
+
+    #table td {
+      border: 2px solid #CCC;
+      background: #FFF;
+      cursor: text;
+    }
+
+    #table td.disabled {
+      background: inherit;
+      cursor: inherit;
+    }
+
+    #table input {
+      border: 0;
+      padding: 1em;
+    }
+
+    #table td.disabled input {
+      visibility: hidden;
+    }
+
+    #stringContainer:after {
+      content: ".";
+      clear: both;
+      display: block;
+    }
+
+    #stringContainer .stringItem:first-child {
+      border-width: 2px 0 0 2px;
+    }
+
+    .stringItem {
+      float: left;
+      background: #FFF;
+      border-width: 2px 0 0 0;
+      border-style: solid;
+      border-color: #CCC;
+    }
+
+    .stringItem > div {
+      border-width: 0 2px 2px 0;
+      border-style: solid;
+      border-color: #CCC;
+      padding: 20px;
+    }
+
+    .headItem {
+      background: #E9E9E9;
+      vertical-align: middle;
+      text-align: center;
+    }
+
+    #console {
+      background: #CCC;
+      height: 20em;
+      overflow: auto;
+    }
+
+    #modalBackdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 100%;
+      background: #000;
+      opacity: 0.3;
+      z-index: 9001; /* It's over 9000 */
+    }
+
+    #modalBox {
+      position: fixed;
+      top: 10%;
+      left: 24%;
+      width: 50%;
+      padding: 2%;
+      background: #FFF;
+      z-index: 9002;
+    }
+
+    #modalBox h2 {
+      display: block;
+    }
+
+    #closeModalLink {
+      float: right;
+    }
+
+    #modalTableName,
+    #modalTableData {
+      width: 100%;
+    }
+
+    #modalTableData {
+      height: 400px;
+    }
+
+    #completeTableFromData {
+      display: block;
+      margin: 2% auto 0;
+      width: 120px;
+      height: 60px;
+    }
+	</style>
+</head>
+<body>
+<h1>IndexedDB Editor</h1>
+<div>
+  <p>
+    In this demonstration, a sample database has been set up, via the IndexedDB API, as well as an example table. There is an interface to create more tables on the fly and edit the table fields at will.
+    <br/>
+    The purpose of this demonstration is to show that IndexedDB can be tapered down to represent any <span title="A store containing no duplicate keys">'tame'</span> store as a table.
+    <br/>
+  </p>
+  <p>
+    This project started off quite simply from loading arrays and now has grown into a full-blown editor. Some non-self-explanatory features are:
+    <ul>
+      <li>To enable/disable a property for an object, double click on the cell that you would like to add/remove.</li>
+      <li>Click and type on a field to edit it. Changes are automatically saved and logged when they occur.</li>
+    </ul>
+</div>
+<div>
+  <div class="labelField">
+    <label for="database">Database: </label><input id="database" name="database" type="text" value="devDerby" />
+    &nbsp;
+    <button id="changeDatabase">Change</button>
+  </div>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <div class="labelField">
+    <label for="tableSelect">Table: </label><select id="tableSelect" name="tableSelect" ></select>
+    &nbsp;
+    <button id="createTable">Create Table</button>
+    &nbsp;
+    <button id="createTableFromData">Create Table from CSV/JSON</button>
+  </div>
+  <fieldset>
+    <legend>Deletion Methods</legend>
+    <button id="deleteDifferentDatabase">Delete a different database</button>
+    <button id="deleteTable">Delete this table</button>
+  </fieldset>
+</div>
+<div>
+  <h2>Objects/Arrays:</h2>
+  &nbsp;
+  <button id="addRow">Add Row</button>
+  &nbsp;
+  <button id="addCol">Add Column</button>
+  <div id="tableContainer">
+    <table id="table">
+    </table>
+  </div>
+</div>
+<div>
+  <h2>Strings:</h2>
+  &nbsp;
+  <button id="addItem">Add Item</button>
+  <div id="stringContainer">
+    <div class="stringItem">
+      <div class="headItem name">
+        <strong>Name</strong>
+        <br/>
+        <button class="hidden">&nbsp;</button>
+      </div>
+      <div class="headItem value">
+        <strong>Value</strong>
+      </div>
+    </div>
+  </div>
+</div>
+<div>
+  <h2>Console:</h2><button id="outputJson">Output store as JSON</button>
+  <div id="console">
+  </div>
+</div>
+<div id="modalContainer" class="displayNone">
+  <div id="modalBackdrop"></div>
+  <div id="modalBox">
+    <a id="closeModalLink" href="javascript:;">Cancel</a>
+    <h2>Create Table from Data</h2>
+    <div class="labelField">
+      <label for="modalTableName">Table name:</label>
+      <br/>
+      <input id="modalTableName" name="modalTableName" type="text" />
+    </div>
+    <div class="labelField">
+      <label for="modalTableData">CSV/JSON Data:</label>
+      <br/>
+      <textarea id="modalTableData" name="modalTableData"></textarea>
+    </div>
+    <button id="completeTableFromData">Create Table</button>
+  </div>
+</div>
+<!--
+  Neat but not sure if I will do:
+    - Add ability for formula row
+      -> Add this.row, this.col, this.get(row, col), this.getRel(relRow, relCol)
+    - Add multi-row editing
+    - Column/row resizing
+    - Duplicate key objects
+    - Robustly interpret a CSV
+    - Objectify select box
+-->
+<script>
+(function(window, document){
+  // Fallback and globalize indexedDB variables
+  window.indexedDB = window.indexedDB || window.mozIndexedDB || window.webkitIndexedDB;
+  window.IDBTransaction = window.IDBTransaction || window.webkitIDBTransaction;
+  window.IDBKeyRange = window.IDBKeyRange || window.webkitIDBKeyRange;
+  window.IDBCursor = window.IDBCursor || window.webkitIDBCursor;
+
+  // Localize indexedDB
+  var indexedDB = window.indexedDB,
+      _database = document.getElementById('database'),
+      _changeDatabase = document.getElementById('changeDatabase'),
+      _tableSelect = document.getElementById('tableSelect'),
+      _createTable = document.getElementById('createTable'),
+      _createTableFromData = document.getElementById('createTableFromData'),
+      _deleteDifferentDatabase = document.getElementById('deleteDifferentDatabase'),
+      _deleteTable = document.getElementById('deleteTable'),
+      _outputJson = document.getElementById('outputJson'),
+      _consoleDiv = document.getElementById('console'),
+      _console = {
+        'error': function (msg) {
+          this.log('<span class="error">' + msg + '</span>', true);
+          console && console.error && console.error(msg);
+        },
+        'log': function (msg, dontConsoleLog) {
+          _consoleDiv.innerHTML = '<div>[' + (new Date().toLocaleString()) + '] ' + msg.replace('\n', '<br/>') + '</div>' + _consoleDiv.innerHTML;
+          if (dontConsoleLog !== true) {
+            console && console.log && console.log(msg);
+          }
+        }
+      };
+
+  // If indexedDB cannot be found
+  if (indexedDB === undefined) {
+    // Let the user know a different browser should be used
+    _console.error('Your browser does not support IndexedDB');
+    return;
+  }
+
+  function noop() {
+  }
+
+  // Bind to database deletion
+  _deleteDifferentDatabase.onclick = function () {
+    try {
+      var dbName = prompt('What is the name of the database you would like to delete?'),
+          request = indexedDB.deleteDatabase(dbName);
+      request.onerror = function (f) {
+        _console.error('The requested database ' + dbName + ' could not be deleted.' + e);
+      };
+      request.onsuccess = function () {
+        _console.log('The requested database ' + dbName + ' was successfully deleted.');
+      };
+    } catch (e) {
+      _console.error('Your browser does not currently support database deletion.\nPlease refer to: https://developer.mozilla.org/en/IndexedDB/IDBFactory#Browser_compatibility');
+    }
+  };
+
+  function Indexer() {
+    this.arr = [];
+    this.map = {};
+    this.counter = 0;
+  }
+  Indexer.prototype = {
+    'push': function (key) {
+      var map = this.map;
+      if (map.hasOwnProperty(key)) {
+        _console.error('Key is already defined: ' + key);
+        throw new Error('Key is already defined: ' + key);
+      }
+      // Save key to counter value (preserves order even through decrement)
+      map[key] = this.counter;
+
+      // Add item to array
+      this.arr.push(key);
+
+      // Increment counter
+      this.counter += 1;
+    },
+    'delete': function (key) {
+      var map = this.map;
+      // Throw an error if the key does not exist
+      if (!map.hasOwnProperty(key)) {
+        _console.error('Key does not exist: ' + key);
+        throw new Error('Key does not exist: ' + key);
+      }
+
+      // Delete from map
+      delete map[key];
+
+      // Find and remove item from array
+      var arrIndex = this.indexOf(key);
+      this.arr.splice(arrIndex, 1);
+    },
+    'count': function () {
+      return this.arr.length;
+    },
+    /* 'clear': function () {
+      this.arr = [];
+      this.map = {};
+      this.counter = 0;
+    }, */
+    'indexOf': function (key) {
+      var arr = this.arr,
+          arrIndex = arr.indexOf(key);
+      return arrIndex;
+    }
+  };
+
+  function Binder(input) {
+    var _lastVal = input.value,
+        retObj = {
+          'onchange': function (callback) {
+            // Watch content for changes
+            function checkChange() {
+              var val = input.value;
+              if (_lastVal !== val) {
+                _lastVal = val;
+                callback(val);
+              }
+            }
+
+            function checkChangeLoop() {
+              // Memoize timeout for onblur
+              checkTimeout = setTimeout(function () {
+                // Check if anything has changed
+                checkChange();
+
+                // Loop on self
+                checkChangeLoop();
+              }, 100);
+            }
+
+            input.onfocus = checkChangeLoop;
+
+            input.onblur = function () {
+              // Stop any further checks
+              clearTimeout(checkTimeout);
+
+              // Perform one final check
+              checkChange();
+            };
+          }
+        };
+    return retObj;
+  }
+
+  // Hook up modal bindings
+  // Objectify modal
+  var $modal = (function(document){
+    var _modalContainer = document.getElementById('modalContainer'),
+        _modalTableName = document.getElementById('modalTableName'),
+        _modalTableData = document.getElementById('modalTableData'),
+        _closeModalLink = document.getElementById('closeModalLink'),
+        _completeTableFromData = document.getElementById('completeTableFromData'),
+        retObj = {
+          'show': function () {
+            _modalContainer.className = '';
+          },
+          'hide': function () {
+            _modalContainer.className = 'displayNone';
+          },
+          'clear': function () {
+            _modalTableName.value = '';
+            _modalTableData.value = '';
+          },
+          'onsubmit': noop
+        };
+
+    // Bind to own close link
+    _closeModalLink.onclick = function () {
+      retObj.hide();
+    };
+
+    // Bind to submit data
+    _completeTableFromData.onclick = function () {
+      retObj.onsubmit(_modalTableName.value, _modalTableData.value);
+    };
+
+   return retObj;
+  }(document));
+
+  // Add external bind to show modal
+  _createTableFromData.onclick = function () {
+    $modal.show();
+  };
+
+  // Set up global key manager
+  var _allKeysIndexer = new Indexer(),
+  // Objectify string table
+      $stringContainer = (function(document){
+    var retObj = {},
+    // Localize and privitize container
+        _stringContainer = document.getElementById('stringContainer'),
+
+    // Privitized variables
+        _itemIndexer = new Indexer(),
+        _items = [];
+
+    // Set up bindings for
+    retObj = {
+      'flush': function () {
+        var itemsArr = _itemIndexer.arr,
+            i = itemsArr.length;
+        while (i--) {
+          this.deleteItem(itemsArr[i], true);
+        }
+      },
+      'addItem': function (key, val, silentAdd) {
+        // Check for pre-existing key
+        try {
+          _allKeysIndexer.push(key);
+          _itemIndexer.push(key);
+        } catch (h) {
+          return;
+        }
+
+        var that = this,
+            container = document.createElement('div'),
+            keyContainer = document.createElement('div'),
+            deleteButton = document.createElement('button'),
+            valueContainer = document.createElement('div'),
+            valueInput = document.createElement('input');
+
+        // Set up classes
+        container.className = 'stringItem';
+        keyContainer.className = 'headItem name';
+        valueContainer.className = 'value';
+
+
+        // Set up key container
+        keyContainer.innerHTML = key + '<br/>';
+        deleteButton.innerHTML = 'Delete Item';
+        deleteButton.onclick = function () {
+          that.deleteItem(key);
+        };
+        keyContainer.appendChild(deleteButton);
+
+        // Set up value container
+        valueInput.value = val || '';
+        valueContainer.appendChild(valueInput);
+
+        // Watch input for changes
+        Binder(valueInput).onchange(function (val) {
+          // And announce when one occurs
+          that.onitemupdate(key, val);
+        });
+
+        // Append to DOM and memoize
+        container.appendChild(keyContainer);
+        container.appendChild(valueContainer);
+        _stringContainer.appendChild(container);
+        _items.push(container);
+
+        // Announce completion of event
+        if (silentAdd !== true) {
+          this.onitemadd(key, val);
+        }
+      },
+      'deleteItem': function (key, silentDelete) {
+        // Get key index
+        var index = _itemIndexer.indexOf(key);
+
+        // Check and remove key exists
+        try {
+          _allKeysIndexer['delete'](key);
+          _itemIndexer['delete'](key);
+        } catch (h) {
+          return;
+        }
+
+        // Remove element from the DOM and memory
+        _stringContainer.removeChild( _items[index] );
+        _items.splice(index, 1);
+
+        // Trigger event
+        if (silentDelete !== true) {
+          this.onitemdelete(key);
+        }
+      },
+      'onitemadd': noop,
+      'onitemdelete': noop,
+      'onitemupdate': noop
+    };
+
+    // Attach binding for add itembutton
+    var _addItem = document.getElementById('addItem');
+    _addItem.onclick = function () {
+      var keyName = prompt('What would you like the name the new string?');
+      retObj.addItem(keyName);
+    };
+
+    return retObj;
+  }(document));
+
+  // Objectify table
+  var $table = (function(document){
+    var retObj = {},
+    // Localize and privitize the table
+        _table = document.getElementById('table'),
+        _tableParent = _table.parentNode,
+        _tableHeader = document.createElement('tr');
+    _tableHeader.appendChild( document.createElement('th') );
+    _table.appendChild(_tableHeader);
+
+    // Private vars
+        _rows = [],
+        _rowIndexer = new Indexer(),
+        _colIndexer = new Indexer();
+
+    // Private helper fns
+    function _actOnEachRow(fn) {
+      var row,
+          i;
+      for (i = _rows.length; i--; ) {
+        row = _rows[i];
+        fn(i, row);
+      }
+    }
+
+    function _createCell(rowKey, colKey, val) {
+      // Visciously require a row and column number during construction
+      if (rowKey === undefined || colKey === undefined) {
+        throw new Error('Row/col not specified for cell constructor');
+      }
+
+      var td = document.createElement('td'),
+          input = document.createElement('input'),
+          _lastVal = val,
+          checkTimeout;
+
+      // If the value is an object, coerce it to a string
+      if (typeof val === 'object') {
+        _lastVal = JSON.stringify(val);
+      } else if (val === undefined || val === null) {
+      // Also, perform a fallback for lastVal
+        _lastVal = '';
+      }
+
+      // Set up input type and value
+      input.setAttribute('type', 'text');
+      input.value = _lastVal;
+
+      // If the the value is undefined, disable the cell
+      if (val === undefined) {
+        td.className = 'disabled';
+      }
+
+      // Watch content for changes
+      Binder(input).onchange(function (val) {
+        var announceVal = val;
+        // Try to upcast val as an object
+        try {
+          announceVal = JSON.parse(val);
+        } catch (g) {}
+
+        // Announce change has occurred
+        retObj.oncellupdate(rowKey, colKey, announceVal);
+      });
+
+      // Append the input to the td
+      td.appendChild(input);
+
+      // On a single click of the td, focus to the input
+      td.onclick = function () {
+        // Only if the td is enabled
+        var className = td.className;
+        if (className === undefined || className === '') {
+          input.focus();
+        }
+      }
+
+      // On a double click of the td, enable/disable the cell
+      td.ondblclick = function () {
+        var className = td.className;
+
+        // If the element is currently enabled
+        if (className === undefined || className === '') {
+          // Disable it
+          td.className = 'disabled';
+
+          // And announce that it has been disabled
+          retObj.oncelldisable(rowKey, colKey, val);
+        } else {
+        // Otherwise,  enable it
+          td.className = '';
+
+          // And announce that it has been enabled
+          retObj.oncellenable(rowKey, colKey, val);
+        }
+      };
+
+      // Return generated cell
+      return td;
+    }
+
+    retObj = {
+      'removeFromFlow': function () {
+        _tableParent.removeChild(_table);
+        _table.className = 'displayNone';
+
+        // Set this to a noop
+        var that = this,
+            _removeFromFlow = this.removeFromFlow,
+            _returnToFlow = this.returnToFlow;
+        this.removeFromFlow = noop;
+
+        // And make returnToFlow rebind self
+        this.returnToFlow = function () {
+          // Invoke intended function
+          _returnToFlow.apply(that);
+
+          // Return removeFromFlow and returnToReflow to normal
+          that.removeFromFlow = _removeFromFlow;
+          that.returnToFlow = _returnToFlow;
+        };
+      },
+      'returnToFlow': function () {
+        _table.className = '';
+        _tableParent.appendChild(_table);
+      },
+      'flush': function () {
+        // Localize key arrays
+        var colKeys = _colIndexer.arr,
+            rowKeys = _rowIndexer.arr,
+            i;
+
+        // Indexer clean up should be handled by delete methods
+        // Delete all rows
+        for (i = rowKeys.length; i--; ) {
+          this.deleteRow(rowKeys[i], true);
+        }
+
+        // Delete all columns
+        for (i = colKeys.length; i--; ) {
+          this.deleteCol(colKeys[i], true);
+        }
+      },
+      'deleteRow': function (rowKey, silentDelete) {
+        // Grab the current array of rows
+        var index = _rowIndexer.indexOf(rowKey),
+            row = _rows[index];
+
+        // Remove the key from the indexer
+        try {
+          _allKeysIndexer['delete'](rowKey);
+          _rowIndexer['delete'](rowKey);
+        } catch (h) {
+          return;
+        }
+
+        // Remove the row from the table
+        _table.removeChild(row);
+
+        // Remove the row from the rows array
+        _rows.splice(index, 1);
+
+
+
+        // Announce event
+        if (silentDelete !== true) {
+          this.onrowdelete(rowKey);
+        }
+      },
+      'deleteCol': function (colKey, silentDelete) {
+        // Grab the current array of rows
+        var index = _colIndexer.indexOf(colKey),
+            cellIndex = index + 1;
+
+        // Remove the key from the indexer
+        try {
+          _allKeysIndexer['delete'](colKey);
+          _colIndexer['delete'](colKey);
+        } catch (h) {
+          return;
+        }
+
+        // Take out of the DOM for reduction of reflows
+        this.removeFromFlow();
+
+        // Remove header row's cell
+        _tableHeader.removeChild( _tableHeader.childNodes[cellIndex] );
+
+        // Remove the column's cell from each row
+        _actOnEachRow(function (i, row) {
+          row.removeChild( row.childNodes[cellIndex] );
+        });
+
+        // Shove back in the DOM
+        this.returnToFlow();
+
+        // Announce event
+        if (silentDelete !== true) {
+          this.oncoldelete(colKey);
+        }
+      },
+      'addRow': function (rowKey, row, silentAdd) {
+        // Save new row key (and check to make sure we are not double-adding object keys)
+        try {
+          _allKeysIndexer.push(rowKey);
+          _rowIndexer.push(rowKey);
+        } catch (h) {
+          return;
+        }
+
+        var that = this,
+            tr = document.createElement('tr'),
+            th = document.createElement('th'),
+            deleteButton = document.createElement('button'),
+            colKeys = _colIndexer.map,
+            key;
+
+        // Set up bindings for delete button
+        deleteButton.innerHTML = 'Delete row';
+        deleteButton.onclick = function () {
+          that.deleteRow(rowKey);
+        };
+
+        // Generate th for the row
+        th.innerHTML = rowKey + '<br/>';
+        th.appendChild(deleteButton);
+        tr.appendChild(th);
+
+        // Iterate the keys and generate any new columns
+        for (key in row) {
+          if (row.hasOwnProperty(key)) {
+            if (!colKeys.hasOwnProperty(key)) {
+              this.addCol(key, silentAdd);
+            }
+          }
+        }
+
+        // Iterate the table's columns
+        var colNameArr = _colIndexer.arr,
+            colName,
+            j = 0,
+            len = colNameArr.length,
+            td;
+
+        for ( ; j < len; j++ ) {
+          // Localize column name
+          colName = colNameArr[j];
+
+          // Populate the cell
+          td = _createCell(rowKey, colName, row[colName]);
+
+           // Append the cell to the row
+          tr.appendChild(td);
+        }
+
+        // Append row to table
+        _table.appendChild(tr);
+
+        // Save to rows
+        _rows.push(tr);
+
+        // Announce addition
+        if (silentAdd !== true) {
+          this.onrowadd(rowKey, row);
+        }
+      },
+      'addCol': function (colKey, silentAdd) {
+        // Index latest key
+        try {
+          _allKeysIndexer.push(colKey);
+          _colIndexer.push(colKey);
+        } catch (h) {
+          return;
+        }
+
+        var that = this,
+            th = document.createElement('th'),
+            deleteButton = document.createElement('button');
+
+        // Set up bindings for delete button
+        deleteButton.innerHTML = 'Delete column';
+        deleteButton.onclick = function () {
+          that.deleteCol(colKey);
+        };
+
+        // Add th
+        th.innerHTML = colKey + '<br/>';
+        th.appendChild(deleteButton);
+        _tableHeader.appendChild(th);
+
+        // Add new cell for each row
+        var rowKeys = _rowIndexer.arr;
+        _actOnEachRow(function (i, row) {
+          var rowKey = rowKeys[i];
+          row.appendChild( _createCell(rowKey, colKey) );
+        });
+
+        // Announce addition
+        if (silentAdd !== true) {
+          this.oncoladd(colKey);
+        }
+      },
+      // Cell methods
+      'oncellenable': noop,
+      'oncelldisable': noop,
+      'oncellupdate': noop,
+
+      // Row methods
+      'onrowadd': noop,
+      'onrowdelete': noop,
+
+      // Column methods
+      'oncoladd': noop,
+      'oncoldelete': noop
+    };
+
+    // Listen to addRow and addColumn and trigger appropriate functions
+    var addRowButton = document.getElementById('addRow'),
+        addColButton = document.getElementById('addCol');
+
+    addRowButton.onclick = function () {
+      var rowName = prompt('What would you like to title the new row?');
+      retObj.addRow(rowName, {});
+    };
+
+    addColButton.onclick = function () {
+      var colName = prompt('What would you like to title the new column?');
+      retObj.addCol(colName);
+    };
+
+    return retObj;
+  }(document));
+
+  function onchangedb() {
+    // Attempt to open our db
+    var databaseName = _database.value || 'devDerby',
+        derbyDbRequest = indexedDB.open(databaseName),
+        children,
+        i;
+
+    // Clear out table select box
+    children = _tableSelect.childNodes;
+    for (i = children.length; i--; ) {
+      _tableSelect.removeChild(children[i]);
+    }
+
+    // If we are denied
+    derbyDbRequest.onerror = function () {
+      // Let the user know we need access to continue
+      _console.error('You must allow access to your IndexedDB for this webpage');
+      return;
+    };
+
+    // If we are allowed in
+    derbyDbRequest.onsuccess = function (e) {
+      // Grab the db
+      var derbyDb = e.target.result;
+
+      // Set up error handling
+      function onerror(f) {
+        _console.error('An error has occurred that I have not accounted for. Please panic or refresh the page');
+        return;
+      }
+      derbyDb.onerror = onerror;
+
+      // And disco.
+
+      // Set up continue fn
+      function continueFn() {
+        var objectStoreNames = derbyDb.objectStoreNames,
+            objectStoreName,
+            i = 0,
+            len = objectStoreNames.length,
+            option;
+
+        if (len < 1) {
+          onerror('No object stores exist when one should');
+        }
+
+        // Clear out table select box [for safe measure]
+        var children = _tableSelect.childNodes;
+        for (i = children.length; i--; ) {
+          _tableSelect.removeChild(children[i]);
+        }
+
+        // Populate the select box with store names
+        for (i = 0; i < len; i++ ) {
+          option = document.createElement('option');
+          option.innerHTML = objectStoreNames[i];
+          _tableSelect.appendChild(option);
+        }
+
+        // Bind to the onchange event
+        _tableSelect.onchange = function () {
+          openStore(_tableSelect.value);
+        };
+
+        // Choose the first alphabetical table from objectStoreNames
+        objectStoreName = objectStoreNames[0];
+
+        // Open that store
+        openStore(objectStoreName);
+      }
+
+      function openStore(objectStoreName) {
+        var rows = {},
+            transaction,
+            objectStore;
+
+        // Begin to collect rows
+        transaction = derbyDb.transaction(objectStoreName);
+        objectStore = transaction.objectStore(objectStoreName);
+        cursorRequest = objectStore.openCursor(null, IDBCursor.NEXT_NO_DUPLICATE);
+
+        // Handle errors and successes
+        cursorRequest.onerror = onerror;
+        cursorRequest.onsuccess = function () {
+          var cursor = cursorRequest.result,
+              getRequest,
+              updateDb;
+
+          // If the cursor is pointing to something
+          if (cursor !== undefined) {
+            // Retrieve it
+            getRequest = objectStore.get(cursor.key);
+            getRequest.onerror = onerror;
+            getRequest.onsuccess = function () {
+              // And add it to a new row
+              rows[cursor.key] = getRequest.result;
+
+              // Continue to next row
+              cursor.continue();
+            };
+          } else {
+          // Otherwise
+            // Clean out the table and string container
+            $stringContainer.flush();
+            $table.flush();
+
+            // Iterate the rows
+            var key,
+                row;
+
+            // Hide the table and remove it from the DOM (reduce repaints/reflows)
+            $table.removeFromFlow();
+
+            // Iterate object and add rows
+            for (key in rows) {
+              if (rows.hasOwnProperty(key)) {
+                row = rows[key];
+                // If the row is an object, add it to the table
+                if (typeof row === 'object') {
+                  $table.addRow(key, row, true);
+                } else {
+                // Otherwise, add it to the string container
+                  $stringContainer.addItem(key, row, true);
+                }
+              }
+            }
+
+            // Unhide the table
+            $table.returnToFlow();
+
+            updateDb = function (value, key, successFn) {
+              var transaction = derbyDb.transaction(objectStoreName, IDBTransaction.READ_WRITE),
+                  objectStore = transaction.objectStore(objectStoreName),
+                  request = objectStore.put(value, key);
+              request.onerror = onerror;
+              request.onsuccess = successFn;
+            };
+
+            // And update to the proper oncellupdate
+            $table.oncellupdate = function (rowKey, colKey, value) {
+              // Update our local copy of row
+              var row = rows[rowKey];
+              row[colKey] = value;
+
+              // Try to save to db
+              updateDb(row, rowKey, function () {
+                _console.log('Row "' + rowKey + '", Column "' + colKey + '" successfully updated.');
+              });
+            };
+
+            // Update on a cell enable
+            $table.oncellenable = function (rowKey, colKey, value) {
+              // Update our local copy of row
+              var row = rows[rowKey];
+              row[colKey] = value || '';
+
+              // Try to save to db
+              updateDb(row, rowKey, function () {
+                _console.log('Row "' + rowKey + '", Column "' + colKey + '" successfully enabled.');
+              });
+            };
+
+            // Update on a cell disable
+            $table.oncelldisable = function (rowKey, colKey, value) {
+              // Update our local copy of row
+              var row = rows[rowKey];
+              delete row[colKey];
+
+              // Try to save to db
+              updateDb(row, rowKey, function () {
+                _console.log('Row "' + rowKey + '", Column "' + colKey + '" successfully disabled.');
+              });
+            };
+
+            // Update on row creation
+            $table.onrowadd = function (rowKey, row) {
+              // Update our local copy of row
+              rows[rowKey] = row;
+
+              // Try to save to db
+              updateDb(row, rowKey, function () {
+                _console.log('Row "' + rowKey + '" successfully added.');
+              });
+            };
+
+            // Update on row deletion
+            $table.onrowdelete = function (rowKey) {
+              // Update our local copy of row
+              delete rows[rowKey];
+
+              // Try to save to db
+              var transaction = derbyDb.transaction(objectStoreName, IDBTransaction.READ_WRITE),
+                  objectStore = transaction.objectStore(objectStoreName),
+                  request = objectStore.delete(rowKey);
+              request.onerror = onerror;
+              request.onsuccess = function () {
+                _console.log('Row "' + rowKey + '" successfully deleted.');
+              };
+            };
+
+            // Update on column creation
+            $table.oncoladd = function (colKey) {
+              _console.log('Column "' + colKey + '" successfully added.');
+            };
+
+            // Update on column deletion
+            $table.oncoldelete = function (colKey) {
+              // Open a transaction since this is a multi-item edit
+              var transaction = derbyDb.transaction(objectStoreName, IDBTransaction.READ_WRITE),
+                  objectStore = transaction.objectStore(objectStoreName),
+                  row,
+                  rowKey,
+                  i;
+
+              // Iterate each row
+              for (rowKey in rows) {
+                if (rows.hasOwnProperty(rowKey)) {
+                  row = rows[rowKey];
+
+                  // If it has the property listed
+                  if (row.hasOwnProperty(colKey)) {
+                    // Delete row's entry
+                    delete row[colKey];
+
+                    // Make request to update database
+                    objectStore.put(row, rowKey);
+                  }
+                }
+              }
+
+              transaction.onerror = onerror;
+              transaction.oncomplete = function () {
+                _console.log('Column "' + colKey + '" successfully deleted.');
+              };
+            };
+
+            // Bind to output JSON button
+            _outputJson.onclick = function () {
+              _console.log('JSON of "' + objectStoreName + '":\n' + JSON.stringify(rows));
+            };
+
+            // Bind to deletion of table
+            _deleteTable.onclick = function () {
+              // Open up the db for reversioning
+              var req = derbyDb.setVersion('0.1');
+              req.onerror = onerror;
+              req.onsuccess = function () {
+                // Make our delete request
+                try {
+                  var deleteRequest = derbyDb.deleteObjectStore(objectStoreName);
+                } catch (h) {
+                  onerror();
+                }
+                // Announce the success
+                _console.log('Table "' + objectStoreName + '" successfully deleted');
+
+                // Open the next available table
+                openCreateFirstStore();
+              }
+            }
+
+            // Bind to string addition
+            $stringContainer.onitemadd = function (rowKey, val) {
+              // Update our local copy of row
+              rows[rowKey] = val;
+
+              // Try to save to db
+              updateDb(val, rowKey, function () {
+                _console.log('Row "' + rowKey + '" successfully added.');
+              });
+            };
+
+            // Bind to string deletion
+            $stringContainer.onitemdelete = function (rowKey) {
+              // Update our local copy of row
+              delete rows[rowKey];
+
+              // Try to save to db
+              var transaction = derbyDb.transaction(objectStoreName, IDBTransaction.READ_WRITE),
+                  objectStore = transaction.objectStore(objectStoreName),
+                  request = objectStore.delete(rowKey);
+              request.onerror = onerror;
+              request.onsuccess = function () {
+                _console.log('Row "' + rowKey + '" successfully deleted.');
+              };
+            };
+
+            // Bind to string update
+            $stringContainer.onitemupdate = function (rowKey, val) {
+              // Update our local copy of row
+              rows[rowKey] = val;
+
+              // Try to save to db
+              updateDb(val, rowKey, function () {
+                _console.log('Row "' + rowKey + '" successfully updated.');
+              });
+            };
+          }
+        }
+      }
+
+      // Helper function for creating store
+      function createStore(name, data, callback) {
+        // Verify that the table doesn't already exist
+        if (derbyDb.objectStoreNames.contains(name)) {
+          _console.error('Table name already exists: ' + name);
+        }
+
+        var req = derbyDb.setVersion('0.1');
+        req.onerror = onerror;
+        req.onsuccess = function () {
+          var newStore = derbyDb.createObjectStore(name),
+              // ''     'Hello' 'and'       'welcome'       'to'
+              // 'my'   'MDN'   'Dev Derby' 'demonstration' -
+              // 'of'   -       -           -               'IndexedDB'
+
+              // December
+              // 2011
+              rowObjs = data || {
+                'my': {
+                  'Hello': 'MDN',
+                  'and': 'Dev Derby',
+                  'welcome': 'demonstration'
+                },
+                'of': {
+                  'to': 'IndexedDB'
+                },
+                'Month': 'December 2011'
+              },
+              key,
+              rowKeyArr = [],
+              i = 0,
+              len;
+
+          // Populate rowArr
+          for (key in rowObjs) {
+            if (rowObjs.hasOwnProperty(key)) {
+              rowKeyArr.push(key);
+            }
+          }
+          len = rowKeyArr.length;
+
+          function addNextRow() {
+            // If we have added all the rows, call our callback
+            if (i >= len) {
+              if (callback) {
+                callback();
+              }
+              return;
+            }
+
+            // Add row to store
+            var rowKey = rowKeyArr[i],
+                putRequest = newStore.put(rowObjs[rowKey], rowKey);
+            putRequest.onerror = onerror;
+            putRequest.onsuccess = function () {
+              // Increment and continue looping
+              i += 1;
+              addNextRow();
+            };
+          }
+
+          // Begin adding rows
+          addNextRow();
+        }
+      }
+
+      function openCreateFirstStore() {
+        // If no tables are found
+        if (derbyDb.objectStoreNames.length === 0) {
+          // Populate our example table
+          createStore('Example Table', null, continueFn);
+        } else {
+        // Otherwise, invoke continueFn
+          continueFn();
+        }
+      }
+      openCreateFirstStore();
+
+      function afterCreateStore(newTableName) {
+        return function () {
+          // Add new option to select box
+          var option = document.createElement('option');
+          option.innerHTML = newTableName;
+          _tableSelect.appendChild(option);
+
+          // Make it selected
+          _tableSelect.childNodes[ _tableSelect.selectedIndex ].removeAttribute('selected');
+          option.setAttribute('selected', 'selected');
+
+          // Open the table
+          openStore(newTableName);
+        };
+      }
+
+      // Bind to the create table button
+      _createTable.onclick = function () {
+        // Get the new table name
+        var newTableName = prompt('What is the name of the new table?');
+
+        // Attempt to create the new table
+        createStore(newTableName, null, afterCreateStore(newTableName));
+      };
+
+      // Bind to the create table with data
+      $modal.onsubmit = function (name, data) {
+        // Hide the modal
+        $modal.hide();
+
+        // Attempt to interpret JSON
+        var objData;
+        try {
+          objData = JSON.parse(data);
+        } catch (h) {}
+
+        // If no JSON was parsed
+        if (objData === undefined) {
+          // Interpret as a CSV
+          objData = data.split(/\n/g);
+
+          // Iterate each row and break down the commas
+          var i = objData.length;
+          while (i--) {
+            objData[i] = objData[i].split(/,/g);
+          }
+        }
+
+        // Create the table
+        createStore(name, objData, afterCreateStore(name));
+
+        // // Clear the fields
+        // $modal.clear();
+      };
+    };
+  }
+
+  // Open the currently listed database
+  onchangedb();
+
+  // And watch for clicks on the change button
+  _changeDatabase.onclick = onchangedb;
+}(this, document));
+</script>
+</body>
+</html>
