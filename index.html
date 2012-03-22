@@ -31,7 +31,7 @@
     h2 {
       display: inline;
     }
-    
+
     li:before {
       content: "\00A0\2022\00A0";
     }
@@ -969,7 +969,7 @@
             objectStore;
 
         // Begin to collect rows
-        transaction = derbyDb.transaction(objectStoreName);
+        transaction = derbyDb.transaction(objectStoreName, IDBTransaction.READ_WRITE);
         objectStore = transaction.objectStore(objectStoreName);
         cursorRequest = objectStore.openCursor(null, IDBCursor.NEXT_NO_DUPLICATE);
 
@@ -1136,9 +1136,55 @@
             // Bind to deletion of table
             _deleteTable.onclick = function () {
               // Open up the db for reversioning
-              var req = derbyDb.setVersion('0.1');
-              req.onerror = onerror;
-              req.onsuccess = function () {
+              var req,
+                  callback = openCreateFirstStore;
+
+              // Legacy support for older browsers
+              try {
+                req = derbyDb.setVersion('0.1');
+                req.onerror = onerror;
+                req.onsuccess = next;
+              } catch (e) {}
+              
+              // If the previous set version did not work
+              // We are accessing outside of the catch scope to reduce the scope chain lookup [Zakas]
+              if (req === undefined) {
+                // Grab the properties of the current db
+                var dbName = derbyDb.name,
+                    dbVersion = derbyDb.version;
+
+                // Close the current connection
+                derbyDb.close();
+
+                // Overwrite the callback to a noop
+                var _callback = callback;
+                callback = (function () {
+                  var timesCalled = 0;
+                  return function () {
+                    timesCalled += 1;
+                    if (timesCalled === 2) {
+                      _callback();
+                    }
+                  };
+                }());
+
+                // Re-open with an increased version
+                var dbReq = indexedDB.open(dbName, dbVersion + 1);
+                dbReq.onupgradeneeded = function (e) {
+                  derbyDb = e.target.result;
+                  next();
+                };
+                dbReq.onsuccess = function () {
+                  // // Rewrite back to a normal db
+                  // derbyDb = e.target.result;
+
+                  // and trigger the original callback
+                  callback();
+                };
+              }
+
+              // TODO: Come back
+              function next() {
                 // Make our delete request
                 try {
                   var deleteRequest = derbyDb.deleteObjectStore(objectStoreName);
@@ -1149,7 +1195,7 @@
                 _console.log('Table "' + objectStoreName + '" successfully deleted');
 
                 // Open the next available table
-                openCreateFirstStore();
+                callback();
               }
             }
 
@@ -1200,9 +1246,52 @@
           _console.error('Table name already exists: ' + name);
         }
 
-        var req = derbyDb.setVersion('0.1');
-        req.onerror = onerror;
-        req.onsuccess = function () {
+        var req;
+        // Legacy support for older browsers
+        try {
+          req = derbyDb.setVersion('0.1');
+          req.onerror = onerror;
+          req.onsuccess = next;
+        } catch (e) {}
+
+        // If the previous set version did not work
+        // We are accessing outside of the catch scope to reduce the scope chain lookup [Zakas]
+        if (req === undefined) {
+          // Grab the properties of the current db
+          var dbName = derbyDb.name,
+              dbVersion = derbyDb.version;
+
+          // Close the current connection
+          derbyDb.close();
+
+          // Overwrite the callback to a noop
+          var _callback = callback;
+          callback = (function () {
+            var timesCalled = 0;
+            return function () {
+              timesCalled += 1;
+              if (timesCalled === 2) {
+                _callback();
+              }
+            };
+          }());
+
+          // Re-open with an increased version
+          var dbReq = indexedDB.open(dbName, dbVersion + 1);
+          dbReq.onupgradeneeded = function (e) {
+            derbyDb = e.target.result;
+            next();
+          };
+          dbReq.onsuccess = function () {
+            // // Rewrite back to a normal db
+            // derbyDb = e.target.result;
+
+            // and trigger the original callback
+            callback();
+          };
+        }
+
+        function next() {
           var newStore = derbyDb.createObjectStore(name),
               // ''     'Hello' 'and'       'welcome'       'to'
               // 'my'   'MDN'   'Dev Derby' 'demonstration' -
